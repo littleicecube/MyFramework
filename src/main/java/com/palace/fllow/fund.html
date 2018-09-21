@@ -1,0 +1,47 @@
+<html>
+<script  type="text/javascript" src="http://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+<script  type="text/javascript" src="raphael.min.js"></script>
+<script  type="text/javascript" src="flowchart.min.js"></script>
+<script type="text/javascript">
+	
+	$(function(){
+		var sec = "st=>start: start\n"+
+		"ed=>end: end\n"+
+		"sourceData=>operation: 原始数据\n"+
+		"conA=>condition: is event A\n"+
+		"opeA=>operation: call event A service\n"+
+		 
+		"conB=>condition: is event B\n"+
+		"opeB=>operation: call event B servcie\n"+
+		"conC=>condition: is event C\n"+
+		"opeEnd=>operation: .... \n"+
+		"opeC=>operation: call event C servcie\n"+
+		
+		"opeGateway=>operation: Gateway Service\n"+
+		"opeDataService=>operation: dataService\n"+
+		
+		"sourceData->conA\n"+
+		"conA(no)->conB\n"+
+		"conA(yes)->opeA->opeGateway\n"+
+		"conB(no)->conC\n"+
+		"conB(yes)->opeB->opeGateway\n"+
+		"conC(no)->opeEnd\n"+
+		"conC(yes)->opeC->opeDataService\n"+
+		"";
+		//"sourceData(right)->sourceDataOperation(right)->mappingData(right)->callService(right)->parseCallResult(right)->finallyData";
+		//"st->op1(right)->op2(right)->op3(right)->ed";
+		flowchart.parse(sec).drawSVG('diagramId');
+	})
+</script>
+<body>
+业务数据类型：
+	<br>用户基本数据，针对用户的协议数据
+	<br>借款基本数据，针对借款的协议数据，针对本次借款相关的出借人数据
+	<br>还款数据
+	<br>代偿数据
+
+宽泛的讲数据的过程
+	<div id="diagramId"></div>
+ 
+</body>
+</html>

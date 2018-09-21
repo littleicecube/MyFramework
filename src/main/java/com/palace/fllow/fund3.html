@@ -1,0 +1,72 @@
+<html>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<script  type="text/javascript" src="http://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+<script  type="text/javascript" src="raphael.min.js"></script>
+<script  type="text/javascript" src="flowchart.min.js"></script>
+<script type="text/javascript">
+	
+	$(function(){
+		var sec = "st=>start: start\n"+
+		"ed=>end: end\n"+
+		"eventData=>operation: eventData\n"+
+		"dbData=>operation: dbData\n"+
+		"readData=>operation: 读取event\n"+
+		
+		
+		"conA=>condition: is event A\n"+
+		"opeA=>operation: call event A service\n"+
+		 
+		"conB=>condition: is event B\n"+
+		"opeB=>operation: call event B servcie\n"+
+		
+		"conC=>condition: is event C\n"+
+		"opeC=>operation: call event C servcie\n"+
+		"opeMapping=>operation: 获取映射数据 \n"+
+		
+		"sourceData=>operation: 原始数据\n"+
+		"sourceDataOperation=>operation: 数据处理：\n	1.map映射\n	2.运算操作\n	3.组合数据\n	4.域in,not in操作\n	5.默认值\n	6.校验\n"+
+		"mappingData=>operation: 生成目标数据\n"+
+		"callService=>operation: 调用外部服务发送数据\n"+
+		"parseCallResult=>operation: 解析结果，做数据处理：\n	1.map映射\n	2.运算操作\n	3.组合数据\n	4.域in,not in操作\n	5.默认值\n	6.校验\n"+
+		"finallyData=>operation: 解析并映射后的结果数据\n"+
+	
+		"opeUpdate=>operation: 更新结果到本地\n"+
+		"readNextData=>operation: 读取下一个event\n"+
+		
+		"st->readData(left)->eventData->readData->conA\n"+
+		"conA(no)->conB\n"+
+		"conA(yes)->opeA->opeMapping\n"+
+		"conB(no)->conC\n"+
+		"conB(yes)->opeB->opeMapping\n"+
+		"conC(no)->opeEnd\n"+
+		"conC(yes)->opeC->opeMapping\n"+
+		"opeMapping->sourceData(right)->sourceDataOperation(right)->mappingData(right)->callService->"+
+		"parseCallResult(right)->finallyData(right)->opeUpdate(right)->readData"+
+		"";
+		//"sourceData(right)->sourceDataOperation(right)->mappingData(right)->callService(right)->parseCallResult(right)->finallyData";
+		//"st->op1(right)->op2(right)->op3(right)->ed";
+		flowchart.parse(sec).drawSVG('diagramId');
+		
+		//st@>op1({"stroke":"Red"})@>sub1({"stroke":"Red"})@>cond({"stroke":"Red"})@>io({"stroke":"Red"})@>op2({"stroke":"Red"})@>cond2({"stroke":"Red"})@>sub3({"stroke":"Red"})@>sub4({"stroke":"Red"})@>io2({"stroke":"Red"})@>e({"stroke":"Red","stroke-width":6,"arrow-end":"classic-wide-long"})
+		
+	/* 	"sourceData->conA\n"+
+		"conA(no)->conB\n"+
+		"conA(yes)->opeA->opeGateway\n"+
+		"conB(no)->conC\n"+
+		"conB(yes)->opeB->opeGateway\n"+
+		"conC(no)->opeEnd\n"+
+		"conC(yes)->opeC->opeDataService\n"+ */
+	})
+</script>
+<body>
+业务数据类型：
+	<br>用户基本数据，针对用户的协议数据
+	<br>借款基本数据，针对借款的协议数据，针对本次借款相关的出借人数据
+	<br>还款数据
+	<br>代偿数据
+
+宽泛的讲数据的过程
+	<div id="diagramId"></div>
+ 
+</body>
+</html>
