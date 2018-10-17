@@ -1,15 +1,44 @@
 package com.jdk.newFeature.scheduler;
 
+import java.util.UUID;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadPoolExecutor.DiscardPolicy;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 
 public class SchedulerService {
-
+	static AtomicInteger c = new AtomicInteger();
+	static ScheduledExecutorService service = Executors.newScheduledThreadPool(1);
+	
+	@Test
+	public void uuid() {
+		String ss = UUID.randomUUID().toString();
+		System.out.println(ss);
+	}
+	@Test
+	public void testSchdulerCallStack() throws Exception {
+		sche("be");
+		synchronized (c) {
+			c.wait(1000000);
+		}
+	}
+	
+	public static void sche(String sr) {
+		Runnable r = new Runnable() {
+			@Override
+			public void run() {
+				System.out.println("sr:"+c.incrementAndGet());
+				sche(sr);
+			}
+		};
+		service.schedule(r, 1, TimeUnit.SECONDS);
+	}
 	@Test
 	public void testScheduler() throws Exception {
 		ScheduledThreadPoolExecutor se = new ScheduledThreadPoolExecutor(1);
