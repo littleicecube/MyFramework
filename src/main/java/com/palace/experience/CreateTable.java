@@ -103,21 +103,30 @@ public class CreateTable {
 		 System.out.println(ss);
 	}
 	
-	static String val="	mov	ax, cs\r\n" + 
-			"	movzx eax, ax\r\n" + 
+	static String val="		SPValueInRealMode	dw	0\r\n" + 
+			"	PMMessage:			db	\"错误数据\"	\r\n" + 
+			"	OffsetPMMessage		equ	PMMessage - $$\r\n" + 
+			"	DataLen			equ	$ - SEGMENT_DATA\r\n" + 
+			"\r\n" + 
+			"	times 512 db 0\r\n" + 
+			"	TopOfStack	equ	$ - SEGMENT_STACK-1\r\n" + 
+			"\r\n" + 
+			"	mov	ax, SelectorVideo\r\n" + 
+			"	mov	gs, ax					\r\n" + 
+			"	mov	edi, (80 * 13 + 0) * 2	\r\n" + 
+			"	mov	ah, 0Ch					\r\n" + 
+			"	mov	al, 'L'\r\n" + 
+			"	mov	[gs:edi], ax							\r\n" + 
+			"	jmp	SelectorCode16:0		\r\n" + 
+			"	CodeALen	equ	$ - SEGMENT_CODE\r\n" + 
+			"\r\n" + 
+			"	mov	ax, cs\r\n" + 
+			"	movzx	eax, ax\r\n" + 
 			"	shl	eax, 4\r\n" + 
-			"	add	eax, 12\r\n" + 
+			"	add	eax, LABEL_SEG_CODE16\r\n" + 
 			"	mov	word [LABEL_DESC_CODE16 + 2], ax\r\n" + 
 			"	shr	eax, 16\r\n" + 
 			"	mov	byte [LABEL_DESC_CODE16 + 4], al\r\n" + 
-			"	mov	byte [LABEL_DESC_CODE16 + 7], ah\r\n" + 
-			"	xor	eax, eax\r\n" + 
-			"	mov	ax, cs\r\n" + 
-			"	shl	eax, 4\r\n" + 
-			"	add	eax, LABEL_SEG_CODE32\r\n" + 
-			"	mov	word [LABEL_DESC_CODE32 + 2], ax\r\n" + 
-			"	shr	eax, 16\r\n" + 
-			"	mov	byte [LABEL_DESC_CODE32 + 4], al\r\n" + 
-			"	mov	byte [LABEL_DESC_CODE32 + 7], ah";
+			"	mov	byte [LABEL_DESC_CODE16 + 7], ah";
 	
 }
