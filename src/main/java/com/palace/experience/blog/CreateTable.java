@@ -1,4 +1,4 @@
-package com.palace.experience;
+package com.palace.experience.blog;
 
 import java.util.ArrayList;
 import java.util.List;

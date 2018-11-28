@@ -1,6 +1,6 @@
-package com.palace.experience;
+package com.palace.experience.blog;
 
-import com.palace.experience.CreateTable.Column;
+import com.palace.experience.blog.CreateTable.Column;
 
 public class Address {
  /**
@@ -114,7 +114,7 @@ SEGMENT_BEGIN:
 
 线性地址->物理地址
 不开启分页机制前线性地址就是物理地址,操作系统加载不同应用程序创建的段结构描述中相互之间不能有相同的起始地址.否则会覆盖错乱
-开启分页机制后带来的特性是如果两个应用程序被操作系统加载后,如果创建的段结构信息相同(段起始地址相同,段界限相同,段属性信息相同)即不同的应用程序相同的逻辑地址生成线性地址相同,但是在执行时不会覆盖
+开启分页机制后带来的特性是如果两个应用程序被操作系统加载后,如果创建的段结构信息相同(段起始地址相同,段界限相同,段属性信息相同)即不同的应用程序相同的逻辑地址的线性地址相同,但是在执行时不会覆盖
 不同的应用程序相同的线性地址在执行时相互不影响.
 
 在开启分页机制后,线性地址就是变成了一个中间地址,需要再次被解析才能找到对应的物理地址
