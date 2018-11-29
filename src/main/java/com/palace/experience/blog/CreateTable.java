@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.Test;
+
 public class CreateTable {
  
 	public static class Column{
@@ -79,6 +81,26 @@ public class CreateTable {
 			sVal="0"+val;
 		}
 		return "00000"+sVal;
+	}
+	
+	@Test
+	public void createTable4() {
+		List<Row> rowList = new ArrayList<>();
+		for(int i =0;i<4;i++) {
+			 List<Column> colList = new ArrayList<>();
+			 String column= "a,b,c,d";
+			 for(String cl : column.split(",")) {
+				 Column col = new Column();
+				 col.columnVal = "";
+				 col.columnLen = 10;
+				 colList.add(col);
+			 }
+			 Row row = new Row();
+			 row.columnList = colList;
+			 rowList.add(row);
+		 }
+		 String ss = createTable(rowList).toString();
+		 System.out.println(ss);
 	}
 	
 	public static void main(String[] args) {
