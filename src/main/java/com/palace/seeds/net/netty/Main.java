@@ -1,6 +1,7 @@
 package com.palace.seeds.net.netty;
 
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Test;
 
@@ -17,15 +18,12 @@ public class Main {
 		ByteBuffer.allocateDirect(12334);
 	}
 	//AdaptiveRecvByteBufAllocator  NioServerSocketChannel config中的内存分配器
+	
+	AtomicInteger couter = new AtomicInteger(0);
+	
 	@Test
-	public void poolChunk(){
+	public void poolChunkForTiny() {
 		PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
-		for(int i=0;i<(2<<13)-2;i++) {
-			allocator.ioBuffer(2048);
-		}
-		
-		allocator.ioBuffer(4096);
-		
 		for(int i=0;i<257;i++) {
 			if(i == 256) {
 				allocator.ioBuffer(32);
@@ -35,6 +33,43 @@ public class Main {
 				allocator.ioBuffer(32);
 			}
 		}
+	}
+	@Test
+	public void poolChunkForSmall(){
+		PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
+		for(int i=0;i<4;i++) {
+			int c = couter.incrementAndGet();
+			System.out.println("开始第"+c+"次分配");
+			allocator.ioBuffer(2048);
+			System.out.println("第"+c+"次分配完成");
+		}
+		System.out.println("第"+couter.get()/4+"页");
+		for(int i=0;i<4;i++) {
+			int c = couter.incrementAndGet();
+			System.out.println("开始第"+c+"次分配");
+			allocator.ioBuffer(2048);
+			System.out.println("第"+c+"次分配完成");
+		}
+		System.out.println("第"+couter.get()/4+"页");
+		for(int i=0;i<4;i++) {
+			int c = couter.incrementAndGet();
+			System.out.println("开始第"+c+"次分配");
+			allocator.ioBuffer(2048);
+			System.out.println("第"+c+"次分配完成");
+		}
+		System.out.println("第"+couter.get()/4+"页");
+		for(int i=0;i<4;i++) {
+			int c = couter.incrementAndGet();
+			System.out.println("开始第"+c+"次分配");
+			allocator.ioBuffer(2048);
+			System.out.println("第"+c+"次分配完成");
+		}
+		for(int i=0;i<(2<<13)-2;i++) {
+			allocator.ioBuffer(2048);
+		}
+		
+		allocator.ioBuffer(4096);
+
 		
 		allocator.ioBuffer(4096);
 		allocator.ioBuffer(1024);
@@ -99,6 +134,22 @@ public class Main {
 		double res = (2/4d);
 		System.out.println(res);
 	}
+	
+	@Test
+	public void testAnd() {
+		int normCapacity = 145;
+		
+		//0x0xFF FF FE 00 => E00 =>1110 0000 0000
+		//高23位都是1,低9位都是0,
+		//如果参数和其&后值不等于0,表示传入参数的高23位存在1,低9位都被设置为0了,那么参数肯定大于2^9=512
+		//如果参数和其&后值等于0,表示传的参数的高23位不存在1,低9位都被设置为0了,那么参数肯定等于0
+        if((normCapacity & 0xFFFFFE00) == 0) {
+        	System.out.println("normCapacity小于512");
+        }else {
+        	System.out.println("normCapacity大于512");
+        }
+        
+	}
 
 	
 	@Test
@@ -114,8 +165,12 @@ public class Main {
 		//					   sr:2048;:100000000000
 		//sr:-2048;:11111111111111111111100000000000
 		MovPrint.pInt(-2048);
-		
-		
+		//msg:;sr:-2049;len:32:11111111111111111111011111111111
+		MovPrint.pInt(~2048);
+		//0x4000000000002048
+		MovPrint.pLong(Long.parseLong("4000000000002048",16));
+		//0x4000000000000000
+		MovPrint.pLong(Long.parseLong("4000000000000000",16));
 	}
 	
 	@Test

@@ -1,8 +1,6 @@
 package com.palace.seeds.net.netty;
 
-import io.netty.util.internal.SystemPropertyUtil;
-
-public class analysis {
+public class analysis2 {
 
 	
 	
@@ -10,412 +8,421 @@ public class analysis {
 	
 /**
  * 
- * ====================关于多线程
- * 
- * 当用户程序调用内核方法时，需要发生软中断，然后调用内核方法，这个时候操作系统需要将当前用户在程序的栈结构保存起来，然后转到内核代码中，
- * 调用完成后，还需要还原用户线程的栈和其他相关结构这是一个非常耗时的操作。
- * 这样的话，调度程序和内核程序是两个独立的进程的程序，调度程序负责给内核程序和用户程序分配时间片，用户程序和内核程序需要在这些时间片上执行代码。
- * 出现的情况是当用户程序在执行用户程序中的代码时，这些指令占用cpu时间，当用户程序需要调用其他进程中的方法时，比如调用内核中的方法时，需要切换到
- * 内核的执行代码上，但是当前执行还是用的原来的用户程序的cpu时间，只是程序代码发生里切换。
- * 当在程序中用到了阻塞锁时，多个线程争用同一把锁，其中一个线程没有争用到锁的情况下就需要调用内核程序中的代码进行休眠，这里有两个耗时的操作
- * 一是：用户程序调用内核程序互斥操作产生的 切换开销。
- * 二是：线程的阻塞等待 休眠时间。
- * 在netty中大量应用了cas，用来同步，cas操作是在用户进程执行的时间片中执行的用户代码，不涉及到用户程序到 内核程序的切换，免去了内核切换的开销。
- * 但是这样类似于自旋锁，需要不断的去监测变量的值是否满足需求，需要代码上的循环，无效的循环也是一种开销，和互斥 调用各有利弊需要具体 分析。
- * 
- * 
- * 
- * 
- * 
- * 
- * 
- * 
- * 
- * 
- * 
- * 
- * 
- * 
- * 
- * 
- * ===============流程相关：
- * 线程的关系：
- * （1）主线程也是启动线程，主要执行ServerBootstrap中相关代码，用来启动bossGroup事件组。
- * （2）bossGroup中存在一个线程组，用来处理数据
- * （3）workerGroup中存在一个线程组，用来处理数据
- * 以上三个线程组是netty存在的主要的线程。bossGroup和workerGroup中存在selector，selector可以看做是一个类，类中存在一个
- * list或者数组或者是队列，主线程可以创建一个实例，实例的引用可以保留在主线程中，然后把实例注册到bossGroup中的selector上，selector轮询
- * 事件在轮询自己的集合处理到该数据时，可能会修改该实例中数据状态，而主线程中可以对该实例像bossGroup中一样不断轮询改实例，不断检查其状态值
- * 如果符合条件，在主线程中取消对其轮询，或进行其他操作，从而达到异步处理的目的。
- * bossGroup中的数据也可以和wokerGoroup中的数据进行结合和主线程和bossGroup中的数据处理方式一样，从而达到异步处理的效果。
- * future处理的条件：
- * 		1)两个不同的线程
- * 		2)两个线程都在轮询处理数据
- * 		3)共享的数据句柄
- * 
- * 基本流程：
- * 1)
- *    EventLoopGroup bossGroup = new NioEventLoopGroup(1);
- *    EventLoopGroup workerGroup = new NioEventLoopGroup();
- * 2)   
- * 创建bossGroup用来接收请求的到来，workerGroup用来读取和发送数据,每个group中的存在一个selector，用来轮训事件.
- * 在bossGroup中主要用来轮询请求的到来，在workerGroup中主要用来轮询读，写，连接关闭事件.
- * 3)
- * 每个group中存在一个eventLoop来处理数据，每当selector筛选到数据后，都会根据规则从group中选中一个eventLoop用来处理数据
- * selector轮询时，不光轮询selector中的集合数据还会按照一定的几率轮询eventLoop中的集合数据，eventLoop中的集合数据，属于任务
- * 数据，netty中会把一些代码，封装成一个task存放到集合中，当轮询运行时执行。
- * 4)
- * 正常情况下打开一个server端的socket，serverSocket，然后：
- * while(true){
- * 	Socket socket = serverSocket.accept();
- * 	new Thread(new Runnable(){
- * 		socket.read(buff);
- * 		}
- * 	).start();
- * 和selector结合以后就变成：serverSocketChannel.register(selector,Selector.OPERATOR_ACCEPT,serverSocketChannel);
- * serverSocket打开一个channel，然后将其注册到selector上，并监听他的accept事件，
- * 和netty结合以后就变成：bossGroup绑定端口时，首先需要创建一个NioServerSocketChannel的实例，并指定端口为配置的端口号，然后将
- * 生成的NioServerSocketChannel实例注册到bossGroup中的selector上，然后通过bossGroup中的eventLoop去轮询获取到来的连接事件
- * 获取到新的连接selectionKey[],
- * private void processSelectedKeysOptimized(SelectionKey[] selectedKeys) {
-        for (int i = 0;; i ++) {
-            final SelectionKey k = selectedKeys[i];===(1)===
-            //从key中获取到绑定的channel
-            final Object a = k.attachment();
-            if (a instanceof AbstractNioChannel) {
-            	//处理得到的key和其绑定的channel
-                processSelectedKey(k, (AbstractNioChannel) a);===(2)===
-            } else {
-                NioTask<SelectableChannel> task = (NioTask<SelectableChannel>) a;
-                processSelectedKey(k, task);
-            }
- 			....
-        }
-    }
- * 
- * 
- * 从上面的方法中看出SelectionKeys[]是个数组，需要循环遍历其中的每个SelectionKey,从key中获取绑定的NioServerSocektChannel ch
- * 从ch中获取对应的unsafe()来读取消息内容。
- * private void processSelectedKey(SelectionKey k, AbstractNioChannel ch) {
-        final AbstractNioChannel.NioUnsafe unsafe = ch.unsafe();===(3)===
-        try {
-            if ((readyOps & (SelectionKey.OP_READ | SelectionKey.OP_ACCEPT)) != 0 || readyOps == 0) {
-                unsafe.read();
-            }
-        } catch (CancelledKeyException ignored) {
-            unsafe.close(unsafe.voidPromise());
-        }
-    }
- * 
- * 
- *  调用doReadMessages(readBuf)将接收到的数据读取并存放到readBuf中
- *  private final List<Object> readBuf = new ArrayList<Object>();
- *  public void read() {
-            final ChannelConfig config = config();
-            final ChannelPipeline pipeline = pipeline();
-            final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
-            allocHandle.reset(config);
-            boolean closed = false;
-            Throwable exception = null;
-            try {
-                do {
-                    int localRead = doReadMessages(readBuf);===(4)===
-                    if (localRead == 0) {
-                        break;
-                    }
-                    if (localRead < 0) {
-                        closed = true;
-                        break;
-                    }
-
-                    allocHandle.incMessagesRead(localRead);
-                } while (allocHandle.continueReading());
-            } catch (Throwable t) {
-                exception = t;
-            }
-            ....
-        }
-    }
- * 
- * 
- * 将读取到的SocketChannel封装成一个NioSocketChannel，然后注册到workerGroup中
- * protected int doReadMessages(List<Object> buf) throws Exception {
-        SocketChannel ch = SocketUtils.accept(javaChannel());===(5)===获取SocketChannel
-        try {
-            if (ch != null) {
-                buf.add(new NioSocketChannel(this, ch));===(6)===
-                return 1;
-            }
-        } catch (Throwable t) {
-            ch.close();
-        }
-        return 0;
-    }
- * 
- * 
- * 从ServerSocektChannel中accept到一个SocketChannel然后返回
- * public static SocketChannel accept(final ServerSocketChannel serverSocketChannel) throws IOException {
-        try {
-            return AccessController.doPrivileged(new PrivilegedExceptionAction<SocketChannel>() {
-                @Override
-                public SocketChannel run() throws IOException {
-                    return serverSocketChannel.accept();
-                }
-            });
-        } catch (PrivilegedActionException e) {
-            throw (IOException) e.getCause();
-        }
-    }
- * 从===(1)===，===(2)===，===(3)===， ===(4)===， ===(5)===， ===(6)===代表了bossGroup接收accept请求并注册到workerGroup的过程。
- * 
- *NioServerSocketChannel.register(selector,Selector.OPERATOR_ACCEPT,serverSocketChannel);NioServerSocketChannel将自己注册到selector上
- *这样每个selectionKey中都会附件绑定一个NioServerSocketChannel,如果只用一个NioServerSocketChannel实例，那么每个selectionKey都是绑定的同一个NioServerSocketChannel
- *往下的步骤就是：
- *1）从selectionKey中得到绑定的NioServerSocketChannel实例，然后调用其中的read方法
- *2）在read方法中，调用NioServerSocketChannel->ServerSocketChannel->accept()方法获取一个SocketChannel实例，该实例代表了连接的建立
- *3）封装socketChannel，new NioSocketChannel(socketChannel,NioServerSocketChannel);每个NioSocketChannel实例创建的时候内部都会创建一个config，pipeline
- *4）将NioSocketChannel注册到workerGroup上类似于NioServerSocketChannel实例注册到bossGrop上。
- *
- * 
- * 
- * 
- * 
- * =============================Bootstrap的启动流程
- * 
- * 主线程中创建NioServerSocketChannel的实例，实例中创建pipeline和config的实例，创建完NioServerSocketChannel的实例后为实例中的pipeline添加一个
- * ChannelInitializer初始化执行方法，这个初始化方法中又为pipeline添加了一个ServerBootstrapAcceptor阀门
- *    p.addLast(new ChannelInitializer<Channel>() {
-            @Override
-            public void initChannel(Channel ch) throws Exception {
-                final ChannelPipeline pipeline = ch.pipeline();
-                ChannelHandler handler = config.handler();
-                if (handler != null) {
-                    pipeline.addLast(handler);
-                }
-                ch.eventLoop().execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        pipeline.addLast(new ServerBootstrapAcceptor(
-                                currentChildGroup, currentChildHandler, currentChildOptions, currentChildAttrs));
-                    }
-                });
-            }
-        });
- * 
- * 添加完阀门到pipleline后，只是完成了代码的组织关系，然后将NioServerSocketChannel的代码封装成一个taks添加到EventLoop中，等待EventLoop中的singleThread
- * 线程来执行
- * eventLoop.execute(new Runnable() {
-        @Override
-        public void run() {
-            register0(promise);
-        }
-    });
- * 
- * 从register0()的代码中我们可以看到其触发了NioServerSocketChannel pipeline中的rigester方法，然后进行注册事件的分发，在pipleline中会一个一个阀门的
- * 调用下去，然后知道上面初始化方法中添加的阀门。为什么说上面注册的阀门，因为BoostrapGroup中的eventloop只是 进行请求的接受，接收完请求后创建一个NioSocektChannel实例，
- * 这个实例是在wokerGroup中的selector注册的，那么怎么才能将boostrapGroup和wokerGroup衔接起来，就是通过boostrapGroup中nioServerSocketChannel实例
- * 的pipeline,这个pipeline中有个ServerBootstrapAcceptor阀门，当nioServerSocketChannle中生成nioSocketChannel实例后通过管道分发到ServerBootstrapAcceptor
- * 阀门将nioSocketChannel注册到wokerGroup中的selector上。
- *        
-*	  private void register0(ChannelPromise promise) {
-	    try {
-	        // check if the channel is still open as it could be closed in the mean time when the register
-	        // call was outside of the eventLoop
-	        if (!promise.setUncancellable() || !ensureOpen(promise)) {
-	            return;
-	        }
-	        boolean firstRegistration = neverRegistered;
-	        doRegister();
-	        neverRegistered = false;
-	        registered = true;
-	
-	        // Ensure we call handlerAdded(...) before we actually notify the promise. This is needed as the
-	        // user may already fire events through the pipeline in the ChannelFutureListener.
-	        pipeline.invokeHandlerAddedIfNeeded();
-	
-	        safeSetSuccess(promise);
-	        pipeline.fireChannelRegistered();
-	        // Only fire a channelActive if the channel has never been registered. This prevents firing
-	        // multiple channel actives if the channel is deregistered and re-registered.
-	        if (isActive()) {
-	            if (firstRegistration) {
-	                pipeline.fireChannelActive();
-	            } else if (config().isAutoRead()) {
-	                // This channel was registered before and autoRead() is set. This means we need to begin read
-	                // again so that we process inbound data.
-	                //
-	                // See https://github.com/netty/netty/issues/4805
-	                beginRead();
-	            }
-	        }
-	    } catch (Throwable t) {
-	        // Close the channel directly to avoid FD leak.
-	        closeForcibly();
-	        closeFuture.setClosed();
-	        safeSetFailure(promise, t);
-	    }
-    }
- * 
- * 
- * 1）EventLoopGroup中的线程不是java util 包中的Executor线程池的形式，而是一个线程数组，数据是按照
- * 		一定的分配规则被分配到不同数组下标对应的线程上
- * 2）NioServerSocketChannel和eventloop的关系，NioServerSocketChannel的实例是在BootStrap中被创建的
- * 		bossGroup和workerGroup也都存在于Bootstrap中，Bootstrap中的代码负责把创建的NioServerSocketChannel
- * 实例和bossGroup进行关联，从boosGroup中选取一个线程即eventloop，用来执行NioServerSocketChannel中的代码对外提供服务
- * 
- * 
- * 
- * ===============NioServerSocketChannel和NioSocketChannel
- * NioServerSocketChannel，NioSocketChannel都间接继承自AbstractNioChannel，为了代码的复用作者也是煞费苦心，在AbstractNioChannel中都有一个unsafe变量
- * 这个变量中的方法用来进行实际的读写操作，而NioServerSocketChannel中的读写操作是和NioSocketChannel的操作是不相同的，故抽象的放在Abstract中，实际unsafe是什么类型
- * 由对应的实现来进行赋值。
- * NioServerSocketChannel和NioSocketChannel内部都有一个config，piple实例，每当一个NioServerSocketChannel和NioSocketChannel实例被创建的时候，内部都会
- * 创建一个新的config，piple实例，
- * 
- * 
- * ===============select:
- * 
- *关于定时任务的执行：
- *如果没有定时任务，delayNanos(currentTimeNanos)返回的是1秒中的毫秒表示
- *  long timeoutMillis = (selectDeadLineNanos - currentTimeNanos + 500000L) / 1000000L;
- * 那么这个计算的值为1，就不会走
- * if (timeoutMillis <= 0) {
-        if (selectCnt == 0) {
-            selector.selectNow();
-            selectCnt = 1;
-        }
-        break;
-    }
- *如果有定时任务，那么定时任务肯定有一个创建时间，和一个多少时间延迟后执行的阈值。delayNanos(currentTimeNanos)计算的时候，首先那当前时间和任务的创建件时间
- *做差结果为tmp，然后在哪延迟时间和计算的差值做做差，如果大于零表示还没有到执行时间，然后在将差值和通过下面的计算
- *long timeoutMillis = (selectDeadLineNanos - currentTimeNanos + 500000L) / 1000000L;
- *如果timeoutMillis==0表示延迟的时间在1秒内，也就是说在1秒内的某个时间段内这个任务需要被执行，
- *如果timeoutMillis>0表示延迟的时间超过1秒，也就是说需要超过1秒后的某个时间这个任务需要被执行
- *如果任务需要在1秒的某个时间需要执行，那么首先进行selector.selectNow()来选址io任务，如果要执行的任务在1秒后的某个时间要执行，则调用selector.select(timeoutMillis);
- *时间阻塞方法，进行io任务的选择。
- *
- *主要作用时，如果没有任务则进行超时select如：selector.select(timeoutMillis);，如果有任务要执行立即select如：selector.selectNow(),优先处理io然后在处理任务。
- *
- *
- *     private void select(boolean oldWakenUp) throws IOException {
-        Selector selector = this.selector;
-        try {
-            int selectCnt = 0;
-            long currentTimeNanos = System.nanoTime();
-            long selectDeadLineNanos = currentTimeNanos + delayNanos(currentTimeNanos);
-            for (;;) {
-                long timeoutMillis = (selectDeadLineNanos - currentTimeNanos + 500000L) / 1000000L;
-                if (timeoutMillis <= 0) {
-                    if (selectCnt == 0) {
-                        selector.selectNow();
-                        selectCnt = 1;
-                    }
-                    break;
-                }
-
-                // If a task was submitted when wakenUp value was true, the task didn't get a chance to call
-                // Selector#wakeup. So we need to check task queue again before executing select operation.
-                // If we don't, the task might be pended until select operation was timed out.
-                // It might be pended until idle timeout if IdleStateHandler existed in pipeline.
-                if (hasTasks() && wakenUp.compareAndSet(false, true)) {
-                    selector.selectNow();
-                    selectCnt = 1;
-                    break;
-                }
-
-                int selectedKeys = selector.select(timeoutMillis);
-                selectCnt ++;
-
-                if (selectedKeys != 0 || oldWakenUp || wakenUp.get() || hasTasks() || hasScheduledTasks()) {
-                    // - Selected something,
-                    // - waken up by user, or
-                    // - the task queue has a pending task.
-                    // - a scheduled task is ready for processing
-                    break;
-                }
-                if (Thread.interrupted()) {
-                    // Thread was interrupted so reset selected keys and break so we not run into a busy loop.
-                    // As this is most likely a bug in the handler of the user or it's client library we will
-                    // also log it.
-                    //
-                    // See https://github.com/netty/netty/issues/2426
-                    if (logger.isDebugEnabled()) {
-                        logger.debug("Selector.select() returned prematurely because " +
-                                "Thread.currentThread().interrupt() was called. Use " +
-                                "NioEventLoop.shutdownGracefully() to shutdown the NioEventLoop.");
-                    }
-                    selectCnt = 1;
-                    break;
-                }
-
-                long time = System.nanoTime();
-                if (time - TimeUnit.MILLISECONDS.toNanos(timeoutMillis) >= currentTimeNanos) {
-                    // timeoutMillis elapsed without anything selected.
-                    selectCnt = 1;
-                } else if (SELECTOR_AUTO_REBUILD_THRESHOLD > 0 &&
-                        selectCnt >= SELECTOR_AUTO_REBUILD_THRESHOLD) {
-                    // The selector returned prematurely many times in a row.
-                    // Rebuild the selector to work around the problem.
-                    logger.warn(
-                            "Selector.select() returned prematurely {} times in a row; rebuilding Selector {}.",
-                            selectCnt, selector);
-
-                    rebuildSelector();
-                    selector = this.selector;
-
-                    // Select again to populate selectedKeys.
-                    selector.selectNow();
-                    selectCnt = 1;
-                    break;
-                }
-
-                currentTimeNanos = time;
-            }
-
-            if (selectCnt > MIN_PREMATURE_SELECTOR_RETURNS) {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Selector.select() returned prematurely {} times in a row for Selector {}.",
-                            selectCnt - 1, selector);
-                }
-            }
-        } catch (CancelledKeyException e) {
-            if (logger.isDebugEnabled()) {
-                logger.debug(CancelledKeyException.class.getSimpleName() + " raised by a Selector {} - JDK bug?",
-                        selector, e);
-            }
-            // Harmless exception - log anyway
-        }
-    }
- * 
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *
- *    @Override
-    protected void wakeup(boolean inEventLoop) {
-        if (!inEventLoop && wakenUp.compareAndSet(false, true)) {
-            selector.wakeup();
-        }
-    }
- * 
- * 
- * 
- * 
  * ===============内存相关:
  * 内存组织的过程:
- * 把内存按一定大小分配为一页一页的形式.默认情况下配置的一个页的大小是8192=8KB,分配完成后我们需要把这个内存页按照完全二叉树的形式组织起来
- * 形成一个集合叫
+ * 把内存按一定大小分配为一页一页的形式.默认情况下配置的一个页的大小是8192=8KB用PoolSubpage来描述,分配完成后我们需要把这些内存页按照完全二叉树的形式组织起来
+ * 形成一个集合用PoolChunk来描述,这颗完全二叉树的高度默认情况下是11,他的叶子节点11层就有2^11=2048个节点,这2048个叶子几点代表了2048个内存页,多个PoolChunk
+ * 又形成一个集合用PoolArena来描述
+ * 可知:
+ * PoolSubpage = 2^13 = 8192 = 8KB
+ * PoolChunk = 2^11 * PoolSubpage = 2^11 * 2^13 = 16MB
+ * PoolArena的最小个数是从
+ * MinNumArena1 = Runtime.getRuntime().availableProcessors() * 2;
+ * MinNumArena2 = Runtime.getRuntime().maxMemory() / 16MB / 2 / 3;
+ * 取最小值  MinNumArena = Math.min(MinNumArena1,MinNumArena2);
+ * 
+ * 
+ * 那么一段内存的分配过程:
+ * 1)选择一个PoolArena和当前线程绑定
+ * 2)从PoolArena中分配一个PoolChunk
+ * 3)从PoolChunk中分配一个可用的叶子节点PoolSubpage
+ * 我们知道一个PoolSubpage的大小是8KB,但是我们不是每次都需要分配8KB的大小我们可能只需要2KB的大小或者500B的大小,那么需要对PoolSubpage在做一个细分
+ * PoolSubpage.elemSize代表了PoolSubpage中最小的单元
+ * 在netty中最小可分配单元是2^4=16B.其他的几种大小有
+ * 16B,	32B,	64B,	128B,	256B,	512B,	1024B(1KB),	2048B(2KB),	4096B(4KB),	8192B(8KB)
+ * 2^4,	2^5,	2^6,	2^7, 	2^8, 	2^9,	2^10,		2^11,	 	2^12,	   	2^13
+ * 
+ * 如果我们需要分配一个10B大小的内存,那么经过整形会分配一个最小的内存单元即16B,当前线程会选择一个和其绑定的PoolArena,在从PoolArena中创建一个PoolChunk
+ * 在从PoolChunk中选择一个可用的叶子节点,然后创建一个PoolSubpage和叶子节点进行绑定.初始化叶子节点设置叶子节点的大小PoolSubpage.pageSize = 8KB
+ * 设置PoolSubpage.elemSize = 16B,那么一个PoolSubpage就有 = 8KB/16B = 8192/16 = 512个16B大小的节点,在PoolSubpage中有一个位图成员
+ * 变量(PoolSubpage.bitmap)用来表示这512个16B大小的内存的分配情况,所以可以在代码中看到入下的初始化计算
+ * 		bitmap = new long[pageSize >>> 10]; // pageSize / 16 / 64
+ * (pageSize = 8KB = 8192)/16(最小的内存单元)/64(一个Long类型的字段有64位) = 8
+ * 即需要一个长度为8的数组,这个数组是Long类型的.java中Long类型是64位的,故8 * 64 = 512,用来表示PoolSubpage中512个大小为16B的内存分配情况
+ * 
+ * 如果我们要分配一个500B的内存,经过整形会分配一个512B的内存,当前线程选择和其绑定的PoolArena,从PoolArena中判断是否有未用完的PoolChunk,如果没有在创建一个新的PoolChunk
+ * 在从PoolChunk中选择一个PoolSubpage.elemSize为512B的PoolSubpage,如果没有则在PoolChunk中分配一个新的叶子节点即PoolSubpage,初始化设置其PoolSubpage.elemSize = 512
+ * 由上可知PoolSubpage.elemSize =512的PoolSubpage需要 pageSize/elemSize = 8192/512 = 16个位图就能表示完,但是PoolSubpage中的还是会创建8个Long类型的数组
+ * 只是用到数组的第0个节点中的低16位用来表示这个PoolSubpage的分配情况
+ * 
+ * 
+ * 
+ * 
+     private void allocateNormal(PooledByteBuf<T> buf, int reqCapacity, int normCapacity) {
+        if (q050.allocate(buf, reqCapacity, normCapacity) || q025.allocate(buf, reqCapacity, normCapacity) ||
+            q000.allocate(buf, reqCapacity, normCapacity) || qInit.allocate(buf, reqCapacity, normCapacity) ||
+            q075.allocate(buf, reqCapacity, normCapacity)) {
+            return;
+        }
+        //1)
+       PoolChunk<T> c = newChunk(pageSize, maxOrder, pageShifts, chunkSize);
+       //2)
+       long handle = c.allocate(normCapacity);
+        assert handle > 0;
+        c.initBuf(buf, handle, reqCapacity);
+        qInit.add(c);
+    }
+ * 
+ * 1)创建一个PoolChunk
+ *     PoolChunk(PoolArena<T> arena, T memory, int pageSize, int maxOrder, int pageShifts, int chunkSize) {
+        unpooled = false;
+        this.arena = arena;
+        this.memory = memory;
+        this.pageSize = pageSize;
+        this.pageShifts = pageShifts;
+        this.maxOrder = maxOrder;
+        this.chunkSize = chunkSize;
+        unusable = (byte) (maxOrder + 1);
+        log2ChunkSize = log2(chunkSize);
+        subpageOverflowMask = ~(pageSize - 1);
+        freeBytes = chunkSize;
+
+        assert maxOrder < 30 : "maxOrder should be < 30, but is: " + maxOrder;
+        maxSubpageAllocs = 1 << maxOrder;
+
+        // Generate the memory map.
+        memoryMap = new byte[maxSubpageAllocs << 1];
+        depthMap = new byte[memoryMap.length];
+        int memoryMapIndex = 1;
+        for (int d = 0; d <= maxOrder; ++ d) { // move down the tree one level at a time
+            int depth = 1 << d;
+            for (int p = 0; p < depth; ++ p) {
+                // in each level traverse left to right and set value to the depth of subtree
+                memoryMap[memoryMapIndex] = (byte) d;
+                depthMap[memoryMapIndex] = (byte) d;
+                memoryMapIndex ++;
+            }
+        }
+        subpages = newSubpageArray(maxSubpageAllocs);
+    }
+ * 
+ * 
+ * 其中for循环用来创建一颗完全二叉树
+ * 
+ * 
+ * 
+ * 
+0	2^0=1			arr[1]=0												
+1	2^1=2			arr[2]=1		arr[3]=1									
+2	2^2=4			arr[4]=2		arr[5]=2		arr[6]=2		arr[7]=2	
+3	2^3=8			arr[8]=3		arr[9]=3		arr[10]=3		arr[11]=3	
+4	2^4=16			arr[16]=4		arr[17]=4		arr[18]=4		arr[19]=4	
+5	2^5=32			arr[32]=5		arr[33]=5		arr[34]=5		arr[35]=5	
+6	2^6=64			arr[64]=6		arr[65]=6		arr[66]=6		arr[67]=6	
+7	2^7=128			arr[128]=7		arr[129]=7		arr[130]=7		arr[131]=7	
+8	2^8=256			arr[256]=8		arr[257]=8		arr[258]=8		arr[259]=8	
+9	2^9=512			arr[512]=9		arr[513]=9		arr[514]=9		arr[515]=9	
+10	2^10=1024		arr[1024]=10	arr[1025]=10	arr[1026]=10	arr[1027]=10
+11	2^11=2048		arr[2048]=11	arr[2049]=11	arr[2050]=11	arr[2051]=11
+
+0																		0
+																		|
+															  +---------------------+
+															  |						|
+1															  2						3
+															  |						|
+														-------------		-----------------
+														|			|		|				|
+2														4			5		6				7
+
+.																		.
+.																		.					
+.																		.
+.
+7 																   128																......	127
+																	|
+									 +--------------------------------------------------------------+
+									 |																|
+8									256															   257								......	511
+									 |																|		
+					  +------------------------------+								 +-------------------------------+
+					  |								 |								 |								 |
+9					 512							513								514								515				......	1023	
+					  |								 |								 |								 |	
+			 +----------------+				 +---------------+				 +---------------+				 +---------------+
+			 |				  |				 |				 |				 |				 |				 |				 |
+10			1024			1025			1026			1027			1028			1029			1030			1031	......	2047		
+			 |				  |				 |				 |				 |				 |				 |				 |
+		+--------+	 	 +-------+		 +--------+		 +-------+		 +-------+		 +-------+		 +-------+		 +-------+
+		|		 |		 |		 |		 |		  |		 |		 |		 |		 |		 |		 |		 |		 |		 |		 |
+11		2048	2049	2050	2051	2052	2053	2054	2055	2056	2057	2058	2059	2060	2061	2062	2063 ...... 4095	
+ * 
+ * 
+ * 
+ * 2)从PoolChunk中分配一个PoolSubpage
+ *     private long allocateSubpage(int normCapacity) {
+ *      //查看是否存在还未用完的PoolSubpage
+        PoolSubpage<T> head = arena.findSubpagePoolHead(normCapacity);
+        synchronized (head) {
+            int d = maxOrder; // subpages are only be allocated from pages i.e., leaves
+            //3)从PoolChunk中的完全二叉树中分配一个可用的节点
+            int id = allocateNode(d);
+            if (id < 0) {
+                return id;
+            }
+
+            final PoolSubpage<T>[] subpages = this.subpages;
+            final int pageSize = this.pageSize;
+
+            freeBytes -= pageSize;
+
+            int subpageIdx = subpageIdx(id);
+            PoolSubpage<T> subpage = subpages[subpageIdx];
+            if (subpage == null) {
+            	//5)创建一个PoolSubpage实例用来表示树的节点
+                subpage = new PoolSubpage<T>(head, this, id, runOffset(id), pageSize, normCapacity);
+                subpages[subpageIdx] = subpage;
+            } else {
+                subpage.init(head, normCapacity);
+            }
+            //7)从叶子节点中分配可用的内存信息
+            return subpage.allocate();
+        }
+    }
+ * 
+ * 3)分配一个可用的节点,从第一层开始比较
+ * 
+ * 
+ * 	######
+	异或运算：相同为0，不同为1
+	用例1：清零
+		2^10 xor 2^10 == 0 ;
+		经常用在汇编中用来清零本身
+		
+	用例2：计算溢出
+		2^10 xor (2^10+1) == 1;
+		2^10 xor (2^10+2) == 2;
+		......
+		2^10 xor (2^8) == 2^8;
+		用来清除最高位和最高位之后的数值，保留除最高位到0位的数值
+		
+		
+ * 
+ *     private int allocateNode(int d) {
+ *     	//int d是maxOrder(树的高度11) = 11
+ *      //id是memoryMap数组的下标 id = 1 表示从最顶层开始
+        int id = 1;
+        int initial = - (1 << d); // has last d bits = 0 and rest all = 1
+        //value(id)表示根据数组的下标获取数组的值,数组的值表示当前所在的层级
+        //如果最最顶层的值小于11表示整棵树都被分配完,没有可用的节点了
+        byte val = value(id);
+        if (val > d) { // unusable
+            return -1;
+        }
+        //从上图可知,树的每一行开始的下标都是以偶数开始的如(^平方)2^1=2,2^2=4,2^3=8......
+        //根据下标从数组中获取其所在的层级,然后和树的最大高度11比较,小于树的高度则表示还没有被分配
+        //如果大于树的高度则异或计算出下标相邻的奇偶位,并获取对应的下标,在根据下标从数组中获取其所在层级和树的高度比较
+        //如果id的奇数位下标对应的数组值(所在层级)也大于树的最大高度11,则表示奇数位下的节点也被分配完了
+        while (val < d || (id & initial) == 0) { // id & initial == 1 << d for all ids at depth d, for < d it is 0
+        	//id左移一位,运算id的二次方值
+            id <<= 1;
+            //获取数组下标对应的值
+            val = value(id);
+            //如果数组下标对应的值大于marOrder(树的高度11),表示这个节点已经被分配
+            if (val > d) {
+            	//异或计算,id = 2^8 = 256 ,id^1= 257; id = 257 = 2^8+1 , id^1 = 256;
+            	//id ^1的作用是,如果id是奇数id^1计算出的值是其相邻的偶数值,如果id是偶数id^1计算出的值是其相邻的奇数值
+                id ^= 1;
+                //得出id相邻奇偶下标获取其所在的层级
+                val = value(id);
+            }
+        }
+        byte value = value(id);
+        setValue(id, unusable); // mark as unusable
+        //4)
+        updateParentsAlloc(id);
+        return id;
+    }
+    
+ * 
+ * 4)标记被分配节点的父节点,用来表示父节点下的子节点的分配情况
+ * updateParentsAlloc和allocateNode(分配节点)相反,updateParentsAlloc是从底部往上循环设置
+ *     private void updateParentsAlloc(int id) {
+ *     //假设id = 2048
+        while (id > 1) {
+        	//计算其对应的父节点 1024
+            int parentId = id >>> 1;
+            //获取当前节点的层级值为12
+            byte val1 = value(id);
+            //获取当前节点相邻的奇偶节点对应的层级值,val2 = arr[2049] = 11
+            byte val2 = value(id ^ 1);
+            //获取当前节点对应的层级值和其相邻的奇偶节点对应层级值中的最小层级值
+            byte val = val1 < val2 ? val1 : val2;
+            //设置其父节点的层级值为其两个子节点中最小的层级值,id = 2018,arr[2048]= 12,id^(异或)1 =2049 arr[2049]=11,那么其父节点arr[1024]=11,有原来的10变成11
+            //当2049这节点也被分配后,则arr[2048]=12,arr[2049]=12,那么arr[1024] = 12,表示1024对应的两个子节点都已经被分配完
+            setValue(parentId, val);
+            id = parentId;
+        }
+    }
+ * 
+ * 5)创建一个PoolSubpage,用来表示被分配的叶子节点,以及内存的使用情况
+ *     PoolSubpage(PoolSubpage<T> head, PoolChunk<T> chunk, int memoryMapIdx, int runOffset, int pageSize, int elemSize) {
+        this.chunk = chunk;
+        this.memoryMapIdx = memoryMapIdx;
+        this.runOffset = runOffset;
+        this.pageSize = pageSize;
+        //创建一个位图用来表示内存的使用情况,一个PoolSubpage最小单元是16B,故可以有8192/16 = 512个,512/64(Long类型长度64位) = 8个Long类型的实例
+        bitmap = new long[pageSize >>> 10]; // pageSize / 16 / 64
+        //6)
+        init(head, elemSize);
+    }
+ * 
+ * 6)初始化PoolSubpage时使用情况
+ *     void init(PoolSubpage<T> head, int elemSize) {
+        doNotDestroy = true;
+        this.elemSize = elemSize;
+        if (elemSize != 0) {
+        	//计算出元素的个数,8192B/16B = 512
+            maxNumElems = numAvail = pageSize / elemSize;
+            nextAvail = 0;
+            //元素的个数右移6位等于除以2^6=64(Long类型长度64位),计算出Long类型的个数.Long数组的长度
+            bitmapLength = maxNumElems >>> 6;
+            //2^6-1 = 63 = 00011111(低5位为1)
+            //&63表示只取低5位,高位在&后都为0,由于maxNumElems都是2的几次方关系,那么(maxNumElems & 63) != 0成立表示maxNumElems小于64
+            //假设maxNumElems共16位,由于maxNumElems都是2的几次方关系,如果maxNumElems<64,那么低5位肯定不都为0,而高位由于&后都是0,那么(maxNumElems & 63) != 0成立
+            //假设maxNumElems共16位,由于maxNumElems都是2的几次方关系,如果maxNumElems>=64,那么低5位肯定都为0,那么低5位&后是0,高位&后也是0,那么(maxNumElems & 63) != 0不成立
+             * 
+            //如果 elemSize >=128 ,那么pageSize / elemSize =8192/elemSize < 64,经过 bitmapLength = maxNumElems >>> 6 = maxNumElems/64后,bitmapLength = 0,然而
+            //这个时候bitmapLength的长度肯定不是0,而是最小长度1,故需要用来判断maxNumElems是否大于63来决定bitmapLength的长度
+            if ((maxNumElems & 63) != 0) {
+                bitmapLength ++;
+            }
+
+            for (int i = 0; i < bitmapLength; i ++) {
+                bitmap[i] = 0;
+            }
+        }
+        addToPool(head);
+    }
+ * 
+ * 7)从叶子节点中分配可用的内存信息
+ *   long allocate() {
+        if (elemSize == 0) {
+            return toHandle(0);
+        }
+
+        if (numAvail == 0 || !doNotDestroy) {
+            return -1;
+        }
+		//在位图中寻找下一个可用的位图索引
+		//8)寻找下一个没有被分配的索引
+        final int bitmapIdx = getNextAvail();
+        //除以64获取所在数组的小标
+        int q = bitmapIdx >>> 6;
+        //取低5位中最大值
+        int r = bitmapIdx & 63;
+        assert (bitmap[q] >>> r & 1) == 0;
+        bitmap[q] |= 1L << r;
+
+        if (-- numAvail == 0) {
+            removeFromPool();
+        }
+		//)
+        return toHandle(bitmapIdx);
+    }
+ * 
+ * 
+ * 8)寻找下一个没有被分配的索引
+ * private int getNextAvail() {
+        int nextAvail = this.nextAvail;
+        if (nextAvail >= 0) {
+            this.nextAvail = -1;
+            return nextAvail;
+        }
+        return findNextAvail();
+    }
+
+    private int findNextAvail() {
+        final long[] bitmap = this.bitmap;
+        final int bitmapLength = this.bitmapLength;
+        for (int i = 0; i < bitmapLength; i ++) {
+        	//遍历每一个Long类型
+            long bits = bitmap[i];
+            //如果取反不为0,表示还有空余的索引未用,只有Long类型的64位都是1都被用完后,~bits取反后才为0
+            if (~bits != 0) {
+                return findNextAvail0(i, bits);
+            }
+        }
+        return -1;
+    }
+ * 
+ *用来寻找Long的64位中哪一位不是0,找到则返回对应的索引值
+ * private int findNextAvail0(int i, long bits) {
+        final int maxNumElems = this.maxNumElems;
+        final int baseVal = i << 6;
+
+        for (int j = 0; j < 64; j ++) {
+            if ((bits & 1) == 0) {
+                int val = baseVal | j;
+                if (val < maxNumElems) {
+                    return val;
+                } else {
+                    break;
+                }
+            }
+            bits >>>= 1;
+        }
+        return -1;
+    }
+ * 
+ * )返回分配的内存信息
+ *     private long toHandle(int bitmapIdx) {
+ *     //0x4000000000000000L=>(64位)0100000000000000000000000000000000000000000000000000000000000000
+ *     //bitmapIdx << 32  bitmapIdx放在高32位,memoryMapIdx放在第32位
+        return 0x4000000000000000L | (long) bitmapIdx << 32 | memoryMapIdx;
+    }
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
  * 
  * 
  * 
@@ -524,24 +531,7 @@ public class analysis {
  *
  *
  
- 
-7 																   128																......	127
-																	|
-									 +--------------------------------------------------------------+
-									 |																|
-8									256															   257								......	511
-									 |																|		
-					  +------------------------------+								 +-------------------------------+
-					  |								 |								 |								 |
-9					 512							513								514								515				......	1023	
-					  |								 |								 |								 |	
-			 +----------------+				 +---------------+				 +---------------+				 +---------------+
-			 |				  |				 |				 |				 |				 |				 |				 |
-10			1024			1025			1026			1027			1028			1029			1030			1031	......	2047		
-			 |				  |				 |				 |				 |				 |				 |				 |
-		+--------+	 	 +-------+		 +--------+		 +-------+		 +-------+		 +-------+		 +-------+		 +-------+
-		|		 |		 |		 |		 |		  |		 |		 |		 |		 |		 |		 |		 |		 |		 |		 |
-11		2048	2049	2050	2051	2052	2053	2054	2055	2056	2057	2058	2059	2060	2061	2062	2063 ...... 4095	
+
 
  *
  *    private int allocateNode(int d) {
@@ -764,18 +754,7 @@ public class analysis {
         return 1 << log2PoolChunkSize - depth(id);
     }
 	
-	######
-	异或运算：相同为0，不同为1
-	用例1：清零
-		2^10 xor 2^10 == 0 ;
-		经常用在汇编中用来清零本身
-		
-	用例2：计算溢出
-		2^10 xor (2^10+1) == 1;
-		2^10 xor (2^10+2) == 2;
-		......
-		2^10 xor (2^8) == 2^8;
-		用来清除最高位和最高位之后的数值，保留除最高位到0位的数值
+
 	
 	前提：
 		一个PoolChunkSize == 2^24大小的一维byte数组，表示一个高度11 == maxOrder的完全二叉树；
