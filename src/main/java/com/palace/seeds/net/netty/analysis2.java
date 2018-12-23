@@ -8,14 +8,83 @@ public class analysis2 {
 	
 /**
  * 
+ * 
+ * 
+ * 
+ * 
+ * final class PoolChunkList<T> implements PoolChunkListMetric {
+    private static final Iterator<PoolChunkMetric> EMPTY_METRICS = Collections.<PoolChunkMetric>emptyList().iterator();
+    private final PoolChunkList<T> nextList;
+    private final int minUsage;
+    private final int maxUsage;
+    private final int maxCapacity;
+    private PoolChunk<T> head;
+    
+    
+   }
+ * 
+ * 当分成功分配一个PoolChunk后,则把这个PoolChunk添加到
+ * void add0(PoolChunk<T> chunk) {
+        chunk.parent = this;
+        if (head == null) {
+            head = chunk;
+            chunk.prev = null;
+            chunk.next = null;
+        } else {
+            chunk.prev = null;
+            chunk.next = head;
+            head.prev = chunk;
+            head = chunk;
+        }
+    }
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
  * ===============内存相关:
  * 内存组织的过程:
  * 把内存按一定大小分配为一页一页的形式.默认情况下配置的一个页的大小是8192=8KB用PoolSubpage来描述,分配完成后我们需要把这些内存页按照完全二叉树的形式组织起来
  * 形成一个集合用PoolChunk来描述,这颗完全二叉树的高度默认情况下是11,他的叶子节点11层就有2^11=2048个节点,这2048个叶子几点代表了2048个内存页,多个PoolChunk
  * 又形成一个集合用PoolArena来描述
  * 可知:
- * PoolSubpage = 2^13 = 8192 = 8KB
- * PoolChunk = 2^11 * PoolSubpage = 2^11 * 2^13 = 16MB
+ * PoolSubpage = 2^13 = 8192 = 8KB	//一页内存的大小
+ * PoolChunk = 2^11 * PoolSubpage = 2^11 * 2^13 = 16MB //整棵树可以表示的内存大小
  * PoolArena的最小个数是从
  * MinNumArena1 = Runtime.getRuntime().availableProcessors() * 2;
  * MinNumArena2 = Runtime.getRuntime().maxMemory() / 16MB / 2 / 3;
@@ -33,7 +102,7 @@ public class analysis2 {
  * 2^4,	2^5,	2^6,	2^7, 	2^8, 	2^9,	2^10,		2^11,	 	2^12,	   	2^13
  * 
  * 如果我们需要分配一个10B大小的内存,那么经过整形会分配一个最小的内存单元即16B,当前线程会选择一个和其绑定的PoolArena,在从PoolArena中创建一个PoolChunk
- * 在从PoolChunk中选择一个可用的叶子节点,然后创建一个PoolSubpage和叶子节点进行绑定.初始化叶子节点设置叶子节点的大小PoolSubpage.pageSize = 8KB
+ * 在从PoolChunk中选择一个可用的叶子节点,然后创建一个PoolSubpage和叶子节点进行对应.初始化叶子节点设置叶子节点的大小PoolSubpage.pageSize = 8KB
  * 设置PoolSubpage.elemSize = 16B,那么一个PoolSubpage就有 = 8KB/16B = 8192/16 = 512个16B大小的节点,在PoolSubpage中有一个位图成员
  * 变量(PoolSubpage.bitmap)用来表示这512个16B大小的内存的分配情况,所以可以在代码中看到入下的初始化计算
  * 		bitmap = new long[pageSize >>> 10]; // pageSize / 16 / 64
@@ -42,8 +111,7 @@ public class analysis2 {
  * 
  * 如果我们要分配一个500B的内存,经过整形会分配一个512B的内存,当前线程选择和其绑定的PoolArena,从PoolArena中判断是否有未用完的PoolChunk,如果没有在创建一个新的PoolChunk
  * 在从PoolChunk中选择一个PoolSubpage.elemSize为512B的PoolSubpage,如果没有则在PoolChunk中分配一个新的叶子节点即PoolSubpage,初始化设置其PoolSubpage.elemSize = 512
- * 由上可知PoolSubpage.elemSize =512的PoolSubpage需要 pageSize/elemSize = 8192/512 = 16个位图就能表示完,但是PoolSubpage中的还是会创建8个Long类型的数组
- * 只是用到数组的第0个节点中的低16位用来表示这个PoolSubpage的分配情况
+ * 由上可知PoolSubpage.elemSize =512的PoolSubpage需要 pageSize/elemSize = 8192/512 = 16个位图就能表示完,用到数组的第0个节点中的低16位用来表示这个PoolSubpage的分配情况
  * 
  * 
  * 
@@ -281,7 +349,7 @@ public class analysis2 {
             //&63表示只取低5位,高位在&后都为0,由于maxNumElems都是2的几次方关系,那么(maxNumElems & 63) != 0成立表示maxNumElems小于64
             //假设maxNumElems共16位,由于maxNumElems都是2的几次方关系,如果maxNumElems<64,那么低5位肯定不都为0,而高位由于&后都是0,那么(maxNumElems & 63) != 0成立
             //假设maxNumElems共16位,由于maxNumElems都是2的几次方关系,如果maxNumElems>=64,那么低5位肯定都为0,那么低5位&后是0,高位&后也是0,那么(maxNumElems & 63) != 0不成立
-             * 
+            //
             //如果 elemSize >=128 ,那么pageSize / elemSize =8192/elemSize < 64,经过 bitmapLength = maxNumElems >>> 6 = maxNumElems/64后,bitmapLength = 0,然而
             //这个时候bitmapLength的长度肯定不是0,而是最小长度1,故需要用来判断maxNumElems是否大于63来决定bitmapLength的长度
             if ((maxNumElems & 63) != 0) {
@@ -368,7 +436,7 @@ public class analysis2 {
  * )返回分配的内存信息
  *     private long toHandle(int bitmapIdx) {
  *     //0x4000000000000000L=>(64位)0100000000000000000000000000000000000000000000000000000000000000
- *     //bitmapIdx << 32  bitmapIdx放在高32位,memoryMapIdx放在第32位
+ *     //bitmapIdx << 32  bitmapIdx放在高32位,memoryMapIdx放在低32位
         return 0x4000000000000000L | (long) bitmapIdx << 32 | memoryMapIdx;
     }
  * 
