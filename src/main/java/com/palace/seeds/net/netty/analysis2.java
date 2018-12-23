@@ -7,7 +7,45 @@ public class analysis2 {
 	
 	
 /**
- * 
+ *   p.addLast(new ChannelInitializer<Channel>() {
+            @Override
+            public void initChannel(Channel ch) throws Exception {
+                final ChannelPipeline pipeline = ch.pipeline();
+                ChannelHandler handler = config.handler();
+                if (handler != null) {
+                    pipeline.addLast(handler);
+                }
+
+                // We add this handler via the EventLoop as the user may have used a ChannelInitializer as handler.
+                // In this case the initChannel(...) method will only be called after this method returns. Because
+                // of this we need to ensure we add our handler in a delayed fashion so all the users handler are
+                // placed in front of the ServerBootstrapAcceptor.
+                ch.eventLoop().execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        pipeline.addLast(new ServerBootstrapAcceptor(
+                                currentChildGroup, currentChildHandler, currentChildOptions, currentChildAttrs));
+                    }
+                });
+            }
+        });
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
  * 
  * 
  * 
@@ -22,6 +60,14 @@ public class analysis2 {
     
     
    }
+   
+  	void add(PoolChunk<T> chunk) {
+        if (chunk.usage() >= maxUsage) {
+            nextList.add(chunk);
+            return;
+        }
+        add0(chunk);
+    }
  * 
  * 当分成功分配一个PoolChunk后,则把这个PoolChunk添加到
  * void add0(PoolChunk<T> chunk) {
@@ -43,10 +89,121 @@ public class analysis2 {
  * 
  * 
  * 
+ * abstract class PoolArena<T> implements PoolArenaMetric {
+	    static final boolean HAS_UNSAFE = PlatformDependent.hasUnsafe();
+	
+	    enum SizeClass {
+	        Tiny,
+	        Small,
+	        Normal
+	    }
+	
+	    static final int numTinySubpagePools = 512 >>> 4;
+	
+	    final PooledByteBufAllocator parent;
+	
+	    private final int maxOrder;
+	    final int pageSize;
+	    final int pageShifts;
+	    final int chunkSize;
+	    final int subpageOverflowMask;
+	    final int numSmallSubpagePools;
+	    
+	    private final PoolSubpage<T>[] tinySubpagePools;
+	    private final PoolSubpage<T>[] smallSubpagePools;
+	
+	    private final PoolChunkList<T> q050;
+	    private final PoolChunkList<T> q025;
+	    private final PoolChunkList<T> q000;
+	    private final PoolChunkList<T> qInit;
+	    private final PoolChunkList<T> q075;
+	    private final PoolChunkList<T> q100;
+	
+	    private final List<PoolChunkListMetric> chunkListMetrics;
+	    
+	    private long allocationsNormal;
+	    // We need to use the LongCounter here as this is not guarded via synchronized block.
+	    private final LongCounter allocationsTiny = PlatformDependent.newLongCounter();
+	    private final LongCounter allocationsSmall = PlatformDependent.newLongCounter();
+	    private final LongCounter allocationsHuge = PlatformDependent.newLongCounter();
+	    private final LongCounter activeBytesHuge = PlatformDependent.newLongCounter();
+	
+	    private long deallocationsTiny;
+	    private long deallocationsSmall;
+	    private long deallocationsNormal;
+	    final AtomicInteger numThreadCaches = new AtomicInteger();
+    }
+ * 
+ * PoolArena的基本数据结构
  * 
  * 
+   	如果存在未用完的PoolSubpage,则直接从 Arena.PoolSubpage<T>[]中查询并分配
+  	synchronized (head) {
+        final PoolSubpage<T> s = head.next;
+        if (s != head) {
+            assert s.doNotDestroy && s.elemSize == normCapacity;
+            long handle = s.allocate();
+            assert handle >= 0;
+            s.chunk.initBufWithSubpage(buf, handle, reqCapacity);
+            incTinySmallAllocation(tiny);
+            return;
+        }
+    }
+            如果缓存不存在,则从PoolChunk中分配新的 PoolSubpage,并缓存到Arena.PoolSubpage<T>[]中
+    synchronized (this) {
+        allocateNormal(buf, reqCapacity, normCapacity);
+    }
  * 
  * 
+ * 	缓存PoolChunk中分配的PoolSubpage到 Arena.PoolSubpage<T>[]中
+ *  private long allocateSubpage(int normCapacity) {
+ *     //根据normCapacity经过流量整形后 Arena.PoolSubpage<T>[]元素
+        PoolSubpage<T> head = arena.findSubpagePoolHead(normCapacity);
+        synchronized (head) {
+            int d = maxOrder; // subpages are only be allocated from pages i.e., leaves
+            int id = allocateNode(d);
+            if (id < 0) {
+                return id;
+            }
+            //h
+            final PoolSubpage<T>[] subpages = this.subpages;
+            final int pageSize = this.pageSize;
+
+            freeBytes -= pageSize;
+
+            int subpageIdx = subpageIdx(id);
+            PoolSubpage<T> subpage = subpages[subpageIdx];
+            if (subpage == null) {
+            //将行生成的PoolSubpage添加到 Arena.PoolSubpage<T>[]的数据中,下次如果 PoolSubpage中bitmap没有被用完时,直接从PoolSubpage分配
+                subpage = new PoolSubpage<T>(head, this, id, runOffset(id), pageSize, normCapacity);
+                subpages[subpageIdx] = subpage;
+            } else {
+                subpage.init(head, normCapacity);
+            }
+            return subpage.allocate();
+        }
+    }
+    
+            设置缓存的值
+    head的引用来自于 Arena.PoolSubpage<T>[]
+  	private void addToPool(PoolSubpage<T> head) {
+        assert prev == null && next == null;
+        prev = head;
+        next = head.next;
+        next.prev = this;
+        head.next = this;
+    }
+ * 
+ *	如果PoolSubpage中的bitmap表示的内存空间被用完后,就从 Arena.PoolSubpage<T>[]缓存中移除,
+ *	下次内存分配是会从PoolChunk中分配新的PoolSubpage并缓存到Arena.PoolSubpage<T>[]
+    private void removeFromPool() {
+        assert prev != null && next != null;
+        prev.next = next;
+        next.prev = prev;
+        next = null;
+        prev = null;
+    }
+
  * 
  * 
  * 

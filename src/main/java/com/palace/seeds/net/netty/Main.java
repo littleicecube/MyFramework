@@ -1,5 +1,6 @@
 package com.palace.seeds.net.netty;
 
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -19,8 +20,38 @@ public class Main {
 	}
 	//AdaptiveRecvByteBufAllocator  NioServerSocketChannel config中的内存分配器
 	
-	AtomicInteger couter = new AtomicInteger(0);
+	AtomicInteger counter = new AtomicInteger(0);
+	AtomicInteger allocateSize = new AtomicInteger(0);
+	long chunkSize = 8192<<11;
 	
+	
+	
+	@Test
+	public void releaseMemory() {
+		PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
+		for(int i=0;i<257;i++) {
+			allocator.ioBuffer(8192*2);
+		}
+		
+	}
+	
+	
+	//超过poolchunk大小2<<13<<11的内存块就不在采用池化的方法,而是直接分配对应大小的数据
+	@Test
+	public void poolChunkForMoreThanOnePoolTrunk() {
+		PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
+		for(int i=0;i<257;i++) {
+			allocator.ioBuffer((8192<<11)*2);
+		}
+	}
+	
+	@Test
+	public void poolChunkForMoreThanOnePage() {
+		PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
+		for(int i=0;i<257;i++) {
+			allocator.ioBuffer(8192*2);
+		}
+	}
 	@Test
 	public void poolChunkForTiny() {
 		PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
@@ -38,50 +69,51 @@ public class Main {
 	public void poolChunkForSmall(){
 		PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
 		for(int i=0;i<4;i++) {
-			int c = couter.incrementAndGet();
+			int c = counter.incrementAndGet();
 			System.out.println("开始第"+c+"次分配");
 			allocator.ioBuffer(2048);
 			System.out.println("第"+c+"次分配完成");
 		}
-		System.out.println("第"+couter.get()/4+"页");
+		System.out.println("第"+counter.get()/4+"页");
 		for(int i=0;i<4;i++) {
-			int c = couter.incrementAndGet();
+			int c = counter.incrementAndGet();
 			System.out.println("开始第"+c+"次分配");
 			allocator.ioBuffer(2048);
 			System.out.println("第"+c+"次分配完成");
 		}
-		System.out.println("第"+couter.get()/4+"页");
-		for(int i=0;i<4;i++) {
-			int c = couter.incrementAndGet();
-			System.out.println("开始第"+c+"次分配");
-			allocator.ioBuffer(2048);
-			System.out.println("第"+c+"次分配完成");
-		}
-		System.out.println("第"+couter.get()/4+"页");
-		for(int i=0;i<4;i++) {
-			int c = couter.incrementAndGet();
-			System.out.println("开始第"+c+"次分配");
-			allocator.ioBuffer(2048);
-			System.out.println("第"+c+"次分配完成");
-		}
-		for(int i=0;i<(2<<13)-2;i++) {
-			allocator.ioBuffer(2048);
-		}
-		
-		allocator.ioBuffer(4096);
 
 		
-		allocator.ioBuffer(4096);
-		allocator.ioBuffer(1024);
-		for(int i=0;i<8;i++){
-			if(i==7){
-				allocator.ioBuffer(1024);
-			}else{
-				allocator.ioBuffer(1024);
+		for(int j=0;j<(2<<13)-2;j++) {
+			System.out.println("第"+counter.get()/4+"页");
+			if(counter.get()/4 == 511) {
+				System.out.println("break;");
 			}
-			
+			for(int i=0;i<4;i++) {
+				int c = counter.incrementAndGet();
+				System.out.println("开始第"+c+"次分配");
+				allocator.ioBuffer(2048);
+				System.out.println("第"+c+"次分配完成");
+			}
 		}
 	}
+	@Test
+	public void poolChunkForPoolChunk(){
+		PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
+		for(int i = 0;i<8192;i++) {
+			int c = counter.incrementAndGet();
+			System.out.println("第"+c/2+"页,第"+c+"次分配开始");
+			allocator.ioBuffer(4096);
+			int allcate = allocateSize.addAndGet(4096);
+			int percent =  new BigDecimal(allcate).divide(new BigDecimal(chunkSize)).multiply(new BigDecimal(100)).intValue();
+			if(percent == 99) {
+				System.out.println("percent:24");
+			}
+			System.out.println("第"+c/2+"页,第"+c+"次分配完成,已分配chunkSize percent:"+(percent));
+		}
+		System.out.println("end");
+	}
+	
+	
 	@Test
 	public void printMovTest() {
 		String str = "3FFFFFFF";
