@@ -6,27 +6,25 @@ import java.util.concurrent.locks.ReentrantLock;
 import com.palace.seeds.utils.WRunnable;
 import com.palace.seeds.utils.WThread;
 
-public class MyNonFairReentrantLock {
+public class ReentrantLockOfCondition {
 
 	static final ReentrantLock rLock=new ReentrantLock();
+	static Condition cond;
 	public static void mainRun(){
+		cond = rLock.newCondition();
 		otherThread();
 		otherThread1();
 		otherThread2();
 		otherThread3();
 	}
 	
-	static Condition cond;
-	public static void condtion(){
-		cond = rLock.newCondition();
-		
-	}
 	public static void otherThread(){
 		WThread.run("thread-0", new WRunnable() {
 			@Override
 			public void call() throws Exception {
-				rLock.tryLock();
+				rLock.lock();
 				System.out.println(" already run 0");
+				cond.await();
 				rLock.unlock();
 				
 				rLock.lock();
@@ -42,6 +40,7 @@ public class MyNonFairReentrantLock {
 			@Override
 			public void call() throws Exception {
 				rLock.lock();
+				cond.await();
 				System.out.println(" already run 1");
 				rLock.unlock();
 				
@@ -59,6 +58,7 @@ public class MyNonFairReentrantLock {
 			@Override
 			public void call() throws Exception {
 				rLock.lock();
+				cond.await();
 				System.out.println(" already run 2");
 				rLock.unlock();
 				
@@ -75,6 +75,7 @@ public class MyNonFairReentrantLock {
 			@Override
 			public void call() throws Exception {
 				rLock.lock();
+				cond.signal();
 				System.out.println(" already run 3");
 				rLock.unlock();
 				

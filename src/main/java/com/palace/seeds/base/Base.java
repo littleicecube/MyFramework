@@ -1,25 +1,40 @@
 package com.palace.seeds.base;
 
+import org.junit.Test;
+
 public class Base {
 
-	/**
-	 * 0x8000|n
-	 * 0x8001|a
-	 * 0x8002|m
-	 * 0x8003|e
-	 * 0x8004|
-	 * 0x8005|
-	 * 0x8006|
-	 * 0x8007|
-	 * 0x8008|
-	 * 0x8009|
-	 * 0x8010|
-	 * 
-	 */
+	static int[] arr =new int[] {12,13,23,23,33,34,55,63,82,99};
 	
-	//字面量name是内存地址的别名，字面量name等同于一段内存地址的表示
-	//例如name == 0x80001,字面量name也是需要占用内存进行存储的，响应的0x80001也是需要存储的
-	//字面量是存储在哪里呢？
-	String name="xiaoming";
+	
+	@Test
+	public void sort() {
+		
+	}
+	
+	
+	
+	
+	
+	public static void main(String[] args) {
+		int r = find(arr);
+		System.out.println(r);
+	}
+	
+	public static int find(int[] arr) {
+		int key = 99;
+		int left = 0,right = arr.length - 1;
+		while(left < right) {
+			int mid = left+(right-left)/2;
+			if(arr[mid] < key) {
+				left = mid+1;
+			}else if(arr[mid] > key) {
+				right = mid-1;
+			}else {
+				return  mid;
+			}
+		}
+		return -1;
+	}
 	
 }

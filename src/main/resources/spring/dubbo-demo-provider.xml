@@ -25,15 +25,17 @@
     <dubbo:registry address="zookeeper://127.0.0.1:2181"/>
     
  	<dubbo:protocol name="dubbo"  port="8899"/>
-	<!-- <dubbo:protocol name="http" port="8889"/>
-    <dubbo:protocol name="hessian" port="8890"/>
-    <dubbo:protocol name="webservice" port="8892"/>
-	<dubbo:protocol name="rest" port="8810" threads="500" contextpath="services" server="tomcat" accepts="500" /> -->
+	<!-- 
+	<dubbo:protocol name="http" port="8889"/>
+	<dubbo:protocol name="tomcat" port="8810" threads="500" contextpath="services" server="tomcat" accepts="500" /> 
+	-->
 	
-<!-- 	<dubbo:service interface="com.palace.seeds.dubbox.api.IHello" ref="helloService"  protocol="rest"/> -->
-	<dubbo:service interface="com.palace.seeds.dubbox.api.IHello" ref="helloService"  protocol="dubbo"/>
-	<dubbo:service interface="com.palace.seeds.dubbox.api.IWorld" ref="worldService"  protocol="dubbo"/>
-	<bean id="helloService" class="com.palace.seeds.dubbox.provider.HelloImp" />
+	<!--
+	 <dubbo:service interface="com.palace.seeds.dubbox.api.IHello" ref="helloService"  protocol="tomcat"/>
+ 	-->
+	<bean id="helloService"  class="com.palace.seeds.dubbox.provider.HelloImp" />
+	<dubbo:service interface="com.palace.seeds.dubbox.api.IHello" ref="helloService"  protocol="dubbo" version ="1.0" scope="remote" actives="10" connections="10"  executes="1000" retries="2" timeout="1000" />
 	<bean id="worldService" class="com.palace.seeds.dubbox.provider.WorldImp" />
+	<dubbo:service interface="com.palace.seeds.dubbox.api.IWorld" ref="worldService"  protocol="dubbo" version ="1.0" scope="remote" actives="10" connections="10"  executes="1000" retries="2" timeout="1000" />
   
 </beans>
