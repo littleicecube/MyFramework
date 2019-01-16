@@ -19,8 +19,7 @@ public class UserService {
 	@Transactional
 	public void update() {
 		tem.update("update tbDict set nCode = nCode+1 ");
-		throw new RuntimeException("abc");
+		throw new RuntimeException("rollBack");
 	}
-
 
 }
