@@ -1,11 +1,9 @@
 package com.palace.seeds.base.cache.google;
 
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 
-import com.ctc.wstx.evt.WDTD;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
