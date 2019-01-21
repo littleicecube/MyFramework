@@ -1,4 +1,4 @@
-package com.palace.seeds.spring.core;
+package com.palace.seeds.spring.transaction.aspectj;
 
 import javax.sql.DataSource;
 
@@ -12,10 +12,17 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class UserPersist {
-	@Autowired
-	public DataSource ds;
-	@Bean(name="ds")
-	public DataSource getDataSource1(){
+	@Bean(name="tem")
+	public JdbcTemplate getTem() {
+		return new JdbcTemplate(getDataSource());
+	}
+	
+	@Bean(name="transactionManager")
+	public DataSourceTransactionManager transactionManager() {
+		return new org.springframework.jdbc.datasource.DataSourceTransactionManager(getDataSource());
+	}
+	
+	public DataSource getDataSource(){
 		BasicDataSource ds = new BasicDataSource();
 		ds.setUrl("jdbc:mysql://localhost:3306/ds");
 		ds.setUsername("root");
@@ -23,16 +30,4 @@ public class UserPersist {
 		ds.setDriverClassName("com.mysql.jdbc.Driver");
 		return ds;
 	}
-	
-	@Bean(name="tem")
-	public JdbcTemplate getTem() {
-		return new JdbcTemplate(ds);
-	}
-	
-	@Bean(name="transactionManager")
-	@DependsOn("ds")
-	public DataSourceTransactionManager transactionManager() {
-		return new org.springframework.jdbc.datasource.DataSourceTransactionManager(ds);
-	}
-	
 }

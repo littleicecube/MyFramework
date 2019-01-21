@@ -32,6 +32,7 @@ import com.atomikos.icatch.jta.UserTransactionImp;
 import com.atomikos.icatch.jta.UserTransactionManager;
 import com.atomikos.jdbc.AtomikosDataSourceBean;
 import com.palace.seeds.model.User;
+import com.sun.org.apache.xalan.internal.xsltc.compiler.Template;
 
 
 @Configuration

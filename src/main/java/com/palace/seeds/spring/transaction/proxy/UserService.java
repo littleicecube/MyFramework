@@ -1,4 +1,4 @@
-package com.palace.seeds.spring.core;
+package com.palace.seeds.spring.transaction.proxy;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,7 +19,9 @@ public class UserService {
 	@Transactional
 	public void update() {
 		tem.update("update tbDict set nCode = nCode+1 ");
-		throw new RuntimeException("rollBack");
+		if(1 == 1) {
+			throw new RuntimeException("rollBack");
+		}
 	}
 
 }
