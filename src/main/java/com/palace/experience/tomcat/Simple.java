@@ -1,7 +1,13 @@
 package com.palace.experience.tomcat;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.util.LinkedHashSet;
 import java.util.Set;
+
+import org.apache.maven.model.Dependency;
+import org.apache.maven.model.Model;
+import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 
 public class Simple {
 	
@@ -72,6 +78,28 @@ public class Simple {
         	
        
  */
+	
+	public static String getJars() {
+		try {
+		StringBuilder sb =new StringBuilder();
+		FileInputStream fis = new FileInputStream(new File("pom.xml"));
+		MavenXpp3Reader reader = new MavenXpp3Reader();
+		Model model = reader.read(fis);
+		for(Dependency dep : model.getDependencies()) {
+			String ss = dep.getArtifactId()+"*.jar";
+			sb.append(ss).append(",");
+		}
+		sb.append("lombok-1.18.0*.jar,");
+		sb.append("curator-client-4.0.0*.jar,");
+		sb.append("curator-framework-4.0.0*.jar,");
+		return sb.deleteCharAt(sb.length()-1).toString();
+		}catch(Exception e) {
+			e.printStackTrace();
+			return "";
+		}
+	}
+	
+	
 	static Set<String> getJarSet() {
 		Set<String> patterns = new LinkedHashSet<>();
 		patterns.add("xerces-J_1.4.0*.jar");
