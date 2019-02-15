@@ -6,7 +6,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import com.palace.seeds.utils.WRunnable;
 import com.palace.seeds.utils.WThread;
 
-public class ReentrantLockOfCondition {
+public class MyReentrantLock {
 
 	static final ReentrantLock rLock=new ReentrantLock();
 	static Condition cond;

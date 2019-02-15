@@ -1,16 +1,108 @@
 package com.palace.seeds.base.jvm.reentrantLock;
 
-
-
-
-
-
 public class analysis {
 	
 /**
  * 
+ *
  * 
- * AbstractQueueSynchronizer队列同步器，包含同步资源的额状态，多个线程需要争夺其中的状态，还包含head和tail指向
+ *    
+ * 	public final void acquire(int arg) {
+        if (!tryAcquire(arg) &&
+            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            selfInterrupt();
+    }
+ *     
+ * 
+ * 添加一个节点到队列中
+ * private Node addWaiter(Node mode) {
+        Node node = new Node(Thread.currentThread(), mode);
+        // Try the fast path of enq; backup to full enq on failure
+        Node pred = tail;
+        if (pred != null) {
+            node.prev = pred;
+            if (compareAndSetTail(pred, node)) {
+                pred.next = node;
+                return node;
+            }
+        }
+        enq(node);
+        return node;
+    }
+ * 
+ * 
+ * 
+ *     
+ * 	private Node enq(final Node node) {
+        for (;;) {
+            Node t = tail;
+            if (t == null) { // Must initialize
+                if (compareAndSetHead(new Node()))
+                    tail = head;
+            } else {
+                node.prev = t;
+                if (compareAndSetTail(t, node)) {
+                    t.next = node;
+                    return t;
+                }
+            }
+        }
+    }
+ *     
+ *	final boolean acquireQueued(final Node node, int arg) {
+        boolean failed = true;
+        try {
+            boolean interrupted = false;
+            for (;;) {
+                final Node p = node.predecessor();
+                if (p == head && tryAcquire(arg)) {
+                    setHead(node);
+                    p.next = null; // help GC
+                    failed = false;
+                    return interrupted;
+                }
+                if (shouldParkAfterFailedAcquire(p, node) &&
+                    parkAndCheckInterrupt())
+                    interrupted = true;
+            }
+        } finally {
+            if (failed)
+                cancelAcquire(node);
+        }
+    }
+ * 
+ *	
+ *
+ *	private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+        int ws = pred.waitStatus;
+        if (ws == Node.SIGNAL)
+         
+            return true;
+        if (ws > 0) {
+            do {
+                node.prev = pred = pred.prev;
+            } while (pred.waitStatus > 0);
+            pred.next = node;
+        } else {
+            compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+        }
+        return false;
+    }
+
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * ######################################################################################
+ * 
+ * 
+ * AbstractQueueSynchronizer队列同步器，包含同步资源的状态，多个线程需要争夺其中的状态，还包含head和tail指向
  * 用来构建双向队列
  * 
  *	public final void acquire(int arg) {
@@ -30,7 +122,7 @@ public class analysis {
  *的队列中，await操作完成后，将当前线程进行阻塞，然后唤醒一个AbstractSychronizeQueue队列中的一个线程，调用await操作完成后不用调用unlock()操作，因为await将其阻塞在condtion队列中。
  *
  *signal操作之前也应该调用trylock()来获取锁，signal操作将condition队列中的等待线程移除，然后添加到AbstractQueueSynchronizer队列中，此时的操作只是将其
- *添加的同步队列中，并没有唤醒线程，还需要借助AbstractSychronizeQueue中的release()方法来唤醒队里中的等待线程
+ *添加的同步队列中，并没有唤醒线程，还需要借助AbstractSychronizeQueue中的release()方法来唤醒队列中的等待线程
  *
  *需要注意的是：await操作完成后将其添加到condition的等待队列中，移除的话只能通过signal操作将等待线程从condition的等待队里移动到AbstractQueueSynchronizer的等待队里中
  *然后在调用同步队列里的release()方法来唤醒线程。
@@ -51,21 +143,6 @@ public class analysis {
  * 
  * 
  * 
- *同步的原理：
- *	1）创建一个共享的资源
- *	2）竞争创建的资源，如果竞争成功，代表获取使用权
- 				   如果竞争失败，继续竞争，直到成功
- 	在同步队列中，同步队列的实例代表了一个竞争资源，线程首先来获取同步队列的使用权，
- 		如果获取队列的使用权成功，修改队列的状态，代表当前线程正在使用这个队列，如果有新的线程
- 			来竞争，首先检查队列的状态是否被占用，如果被占用则把当前线程包装成一个node放到队列的列表中
- 		如果获取队列的使用权失败，则将当前线程封装后放到队列的列表中
- 		如果线程执行完成，则释放当前线程节点，并唤醒下一个等待的线程
- 		
- 		注意：如果按照上面的逻辑，如果先被阻塞的线程早于其他的线程被添加到线程队列中，如果在唤醒的时候也是早于其他线程
- 			被唤醒，因此需要一种同步机制来实现不公平的竞争，也就是后来的线程也有可能早于被添加到队列中的线程获取锁
- 			的使用权。
- 	
- 	
  * 
  */
 }

@@ -1,5 +1,6 @@
 package com.palace.seeds.base.jvm.reentrantLock;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -14,6 +15,7 @@ public class MyNonFairReentrantLock {
 		otherThread1();
 		otherThread2();
 		otherThread3();
+		otherThreadTimeOut();
 	}
 	
 	static Condition cond;
@@ -80,6 +82,21 @@ public class MyNonFairReentrantLock {
 				
 				rLock.lock();
 				System.out.println(" already run 1-3");
+				rLock.unlock();
+			}
+		});
+	}
+	
+	public static void otherThreadTimeOut(){
+		WThread.run("thread-3", new WRunnable() {
+			@Override
+			public void call() throws Exception {
+				rLock.tryLock(10,TimeUnit.SECONDS);
+				System.out.println(" already run TimeOut");
+				rLock.unlock();
+				
+				rLock.lock();
+				System.out.println(" already run 1-TimeOut");
 				rLock.unlock();
 			}
 		});
