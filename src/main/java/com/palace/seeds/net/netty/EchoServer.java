@@ -46,14 +46,7 @@ public final class EchoServer {
              .channel(NioServerSocketChannel.class)
              .option(ChannelOption.SO_BACKLOG, 100)
              .handler(new LoggingHandler(LogLevel.INFO))
-             .childHandler(new ChannelInitializer<SocketChannel>() {
-                 @Override
-                 public void initChannel(SocketChannel ch) throws Exception {
-                     ChannelPipeline p = ch.pipeline();
-                     p.addLast(new EchoServerHandler());
-                 }
-             });
-
+             .childHandler(new TelnetServerInitializer(null));
             // Start the server.
             ChannelFuture f = b.bind(PORT).sync();
             // Wait until the server socket is closed.

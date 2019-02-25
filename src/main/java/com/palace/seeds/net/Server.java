@@ -6,8 +6,8 @@ import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-import org.jboss.netty.util.internal.ConcurrentHashMap;
 import org.junit.Test;
 
 public class Server {
