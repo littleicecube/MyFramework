@@ -1,142 +1,86 @@
 package com.palace.seeds.net.netty;
 
-import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
-import java.nio.channels.ClosedChannelException;
+import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.SelectorProvider;
 import java.util.AbstractSet;
 import java.util.Iterator;
+import java.util.Random;
 
-import org.junit.Test;
-import org.springframework.expression.spel.ast.Selection;
+import io.netty.channel.ChannelOption;
 
 public class SimpleServer {
 	
-	 @Test
-	 public void testServer()  {
-		 try {
-			 SelectorProvider selectorProvider = SelectorProvider.provider();
-			 
-			 //创建一个selector
-			 Selector selectorIns = selectorProvider.openSelector();
-			 
-			 //创建一个set通过反射设置到selector中
-			 SimpleSelectedSelectionKeySet selectedKeySet = new SimpleSelectedSelectionKeySet();
-			 
-			 Class selectorImplClass = sun.nio.ch.SelectorImpl.class;
-			 //获取Selector中声明的字段
-	         Field selectedKeysField = selectorImplClass.getDeclaredField("selectedKeys");
-	         selectedKeysField.setAccessible(true);
-	         //将上面创建的SelectorKeySet设置到selectorIns实例字段selectedKeys中
-	         selectedKeysField.set(selectorIns, selectedKeySet);
-	         
-			 //获取Selector中声明的字段
-	         Field publicSelectedKeysField = selectorImplClass.getDeclaredField("publicSelectedKeys");
-	         publicSelectedKeysField.setAccessible(true);
-	         //将上面创建的SelectorKeySet设置到selectorIns实例字段publicSelectedKeys中
-	         publicSelectedKeysField.set(selectorIns, selectedKeySet);
-			 
-	         //创建一个事件处理实例
-	         SimpleNioServerSocketChannel simpNioServerSocketChannel = new SimpleNioServerSocketChannel();
-	         //创建一个serverChannel实例
-			 ServerSocketChannel  serverChannel = selectorProvider.openServerSocketChannel();
-			 //设置为非阻塞
-			 serverChannel.configureBlocking(false);
-			 //将serverChannel实例注册到selectorIns上,并监听连接创建事件
-			 serverChannel.register(selectorIns, SelectionKey.OP_ACCEPT,simpNioServerSocketChannel);
-			 //将serverChannel和本地端口进行绑定
-			 serverChannel.bind(new InetSocketAddress(8848),100);
-			 
-			 while(true) {
-				 int c = selectorIns.select(3000);
-				 if(c > 0) {
-					 SelectionKey[] keySet = selectedKeySet.flip();
-					 //遍历建立的连接
-					for(SelectionKey seleKey : keySet) {
-						//处理建立的连接
-						if(seleKey != null) {
-							//获取和连接绑定的处理程序
-							SimpleNioServerSocketChannel sss = (SimpleNioServerSocketChannel) seleKey.attachment();
-							//用绑定的处理程序来处理到来的连接
-							sss.doRead(seleKey);
-						}
-					}
-				 }
-			 }
-		 }catch(Exception e) {
-			 e.printStackTrace();
-		 }
-	 }
-	 
-	 @Test
-	 public void testClient() {
-		 try {
-			SelectorProvider.provider().openSocketChannel().connect(new InetSocketAddress("127.0.0.1",8848));
-			Thread.currentThread().sleep(10*60*1000);
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-	 }
-	 //SingleThreadEventExecutor
-	 public static class SimpleNioEventLoopGroup{
-		 SelectorProvider selectorProvider = SelectorProvider.provider();
-		 SimpleEventLoop[] eventLoop = null;
-		 public SimpleNioEventLoopGroup(int nThread,SelectorProvider provider) {
-			 for(int i=0;i<nThread;i++) {
-				 eventLoop[i] = new SimpleEventLoop(selectorProvider);
-			 }
-		 }
-		 
-	 }
-	 
-	 public static class SimpleEventLoop {
-		 Selector selectorIns;
+	public static void main(String[] args) throws Exception {
+		SimpleNioEventLoopGroup bossGroup = new SimpleNioEventLoopGroup(1);
+		SimpleNioEventLoopGroup workerGroup = new SimpleNioEventLoopGroup(4);
+		
+		SimpleServerBootstrap b = new SimpleServerBootstrap();
+        b.group(bossGroup, workerGroup)
+         .channel(SimpleNioServerSocketChannel.class)
+         .option(ChannelOption.SO_BACKLOG, 100)
+         .bind(8848);
+	}
+}
+	/**
+	 * 事件循环类,作为一个独立的线程,在线程启动后通过循环不断的执行selector.select(xxx)操作获取到来的事件
+	 * 1)创建selector
+	 * 2)将创建的channel(有ServerSocketChannel和SocketChannel类型)注册到selector上
+	 * 3)注册channel的同时并监听感兴趣的事件,如ServerSocketChannel类型的channel会监听SelectionKey.OP_ACCEPT类型的事件
+	 * 4)在循环中通过selector.select(xxx)获取到来的事件key
+	 * 5)通过获取和key绑定的处理实例来处理到来的事件
+	 */
+	class SimpleEventLoop {
+		 Selector selector;
 		 SimpleSelectedSelectionKeySet selectedKeySet;
 		 
 		 public SimpleEventLoop(SelectorProvider  selectorProvider) {
 			 try {
-				 selectorIns = selectorProvider.openSelector();
+				 selector = selectorProvider.openSelector();
 				 //创建一个set通过反射设置到selector中
-				 selectedKeySet = new SimpleSelectedSelectionKeySet();
+				 SimpleSelectedSelectionKeySet selectedKeySet = new SimpleSelectedSelectionKeySet();
 				 
 				 Class selectorImplClass = sun.nio.ch.SelectorImpl.class;
 				 //获取Selector中声明的字段
 		         Field selectedKeysField = selectorImplClass.getDeclaredField("selectedKeys");
 		         selectedKeysField.setAccessible(true);
 		         //将上面创建的SelectorKeySet设置到selectorIns实例字段selectedKeys中
-		         selectedKeysField.set(selectorIns, selectedKeySet);
+		         selectedKeysField.set(selector, selectedKeySet);
 		         
 				 //获取Selector中声明的字段
 		         Field publicSelectedKeysField = selectorImplClass.getDeclaredField("publicSelectedKeys");
 		         publicSelectedKeysField.setAccessible(true);
 		         //将上面创建的SelectorKeySet设置到selectorIns实例字段publicSelectedKeys中
-		         publicSelectedKeysField.set(selectorIns, selectedKeySet);
+		         publicSelectedKeysField.set(selector, selectedKeySet);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
-		
-		public void doRun() {
+	
+		 public void doRun() {
 			 try {
 				 while(true) {
-					 int c = selectorIns.select(3000);
+					 int c = selector.select(3000);
 					 if(c > 0) {
 						 SelectionKey[] keySet = selectedKeySet.flip();
 						 //遍历建立的连接
-						for(SelectionKey seleKey : keySet) {
-							//处理建立的连接
-							if(seleKey != null) {
-								System.out.println(seleKey.toString());
-								selectedKeySet.remove(seleKey);
+					for(SelectionKey seleKey : keySet) {
+						//处理建立的连接
+								if(seleKey != null) {
+									System.out.println(seleKey.toString());
+									Object obj = seleKey.attachment();
+									if(obj instanceof SimpleNioServerSocketChannel) {
+										((SimpleNioServerSocketChannel) obj).doRead(seleKey);
+									}else if(obj instanceof SimpleNioSocketChannel) {
+										((SimpleNioSocketChannel) obj).doRead(seleKey);
+									}
+								}
 							}
-						}
-					 }
+						 }
 				 }
 			 }catch(Exception e) {
 				 e.printStackTrace();
@@ -145,43 +89,126 @@ public class SimpleServer {
 		 }
 		 
 		 Thread thread  = new Thread(new Runnable() {
-			@Override
-			public void run() {
-				doRun();
-			}
-		});
-		 
+				@Override
+				public void run() {
+					doRun();
+				}
+			});
 		 public void Register() {
 			 thread.start();
 		 }
-		 
-	 }
-		static class SimpleServerSocektChannel{
-			 SelectorProvider defaultProvider = SelectorProvider.provider();
-			 ServerSocketChannel serverSocketChannel;
-			 SimpleEventLoop eventLoop;
-			 public SimpleServerSocektChannel() {
-				 try {
-					 serverSocketChannel = defaultProvider.openServerSocketChannel();
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
+	}
+	
+	class SimpleNioEventLoopGroup{
+		 SelectorProvider selectorProvider = SelectorProvider.provider();
+		 SimpleEventLoop[] eventLoopArr = null;
+		 public SimpleNioEventLoopGroup(int nThread) {
+			 for(int i=0;i<nThread;i++) {
+				 eventLoopArr[i] = new SimpleEventLoop(selectorProvider);
 			 }
-			 
-			 public void register(SimpleEventLoop eventLoop) throws Exception {
-				 this.eventLoop = eventLoop;
-				 serverSocketChannel.register(eventLoop.selectorIns, SelectionKey.OP_ACCEPT, this);
+		 }
+		 public SimpleEventLoop chooseOne() {
+			 if(eventLoopArr.length ==0) {
+				 return eventLoopArr[0];
+			 }else{
+				 return eventLoopArr[new Random().nextInt()%eventLoopArr.length];
 			 }
 		 }
 	}
-
-	class  SimpleNioServerSocketChannel{
+	
+	
+	
+	
+	class SimpleServerBootstrap{
+		 //创建一个线程数组,实例中只包含一个事件循环线程,用来处理注册在selector上的channel的连接创建事件
+		SimpleNioEventLoopGroup bossGroup = new SimpleNioEventLoopGroup(1);
+		//创建一个线程数组,实例中只包含多个事件循环线程,用来处理注册在selector上的channel的读写事件
+		SimpleNioEventLoopGroup workerGroup = new SimpleNioEventLoopGroup(4);
+		//连接创建事件的channel和其事件到来的处理代码
+		Class<SimpleNioServerSocketChannel> simpleNioServerSocketChannel;
+		//读写建事件的channel和其事件到来的处理代码
+		Class<SimpleNioSocketChannel> simpleNioSocketChannel;
 		
-		public void doRead(SelectionKey sk) {
-			
+		public SimpleServerBootstrap option(Object key,Object val) {
+			return this;
+		}
+		
+		public SimpleServerBootstrap group(SimpleNioEventLoopGroup bossGroup,SimpleNioEventLoopGroup workerGroup) {
+			this.bossGroup  = bossGroup;
+			this.workerGroup = workerGroup;
+			return this;
+		}             
+		public SimpleServerBootstrap channel(Class<SimpleNioServerSocketChannel>  clazz) {
+			this.simpleNioServerSocketChannel = clazz;
+			return this;
+		}
+		public void bind(int port) throws Exception, IllegalAccessException {
+			SimpleNioServerSocketChannel simpleNioServerSocketChannel  = this.simpleNioServerSocketChannel.newInstance();
+			simpleNioServerSocketChannel.register(bossGroup.chooseOne());
+			simpleNioServerSocketChannel.serverSocketChannel.bind(new InetSocketAddress(port),100);
 		}
 	}
 
+	 class SimpleChannelPipeline{
+		 
+	 }
+	 class  SimpleNioServerSocketChannel{
+		SimpleServerBootstrap bootStrap ;
+		SelectorProvider defaultProvider = SelectorProvider.provider();
+		//作为锚点,监听到来的连接
+		ServerSocketChannel serverSocketChannel;
+		//事件循环线程,线程中通过循环不断监听到来的连接事件
+		SimpleEventLoop eventLoop;
+		//和监听channel绑定的管道服务
+		SimpleChannelPipeline channelPipeline;
+		public SimpleNioServerSocketChannel() {
+			try {
+				serverSocketChannel = defaultProvider.openServerSocketChannel();
+				channelPipeline = new SimpleChannelPipeline();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		//将创建的监听channel注册到,循环线程的selector上
+		public void register(SimpleEventLoop eventLoop) throws Exception {
+			this.eventLoop = eventLoop;
+			serverSocketChannel.register(eventLoop.selector, SelectionKey.OP_ACCEPT, this);
+		}
+		
+		public void doRead(SelectionKey sk) throws Exception {
+			SelectableChannel channel = sk.channel();
+			SimpleNioSocketChannel socketChannel = new SimpleNioSocketChannel(this, channel);
+			socketChannel.register(bootStrap.workerGroup.chooseOne());
+		}
+	 }
+ 
+	 class SimpleNioSocketChannel{
+		 //事件循环线程,线程中通过循环不断监听到来的读写事件
+		 SimpleEventLoop eventLoop;
+		 //serverChannel是父级channel,是监听channel
+		 SimpleNioServerSocketChannel parentChannel;
+		 //建立连接时创建的channel
+		 SelectableChannel socketChannel;
+		 //连接channel的管道服务
+		 SimpleChannelPipeline channelPipeline;
+		 public SimpleNioSocketChannel(SimpleNioServerSocketChannel parent,SelectableChannel channel) {
+			try {
+				parentChannel = parent;
+				socketChannel = channel;
+				channelPipeline = new SimpleChannelPipeline();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		 }
+		 public void register(SimpleEventLoop eventLoop) throws Exception {
+			this.eventLoop = eventLoop;
+			//将连接建立的channel注册到读写事件专用的seletor上
+			socketChannel.register(eventLoop.selector, SelectionKey.OP_READ, this);
+		 }	 
+		 public void doRead(SelectionKey sk) {
+			
+		 }
+	 }
 
 
 	class SimpleSelectedSelectionKeySet extends AbstractSet<SelectionKey> {
