@@ -11,7 +11,10 @@ import java.util.AbstractSet;
 import java.util.Iterator;
 import java.util.Random;
 
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoop;
 
 public class SimpleServer {
 	
@@ -27,7 +30,7 @@ public class SimpleServer {
 	}
 }
 	/**
-	 * 事件循环类,作为一个独立的线程,在线程启动后通过循环不断的执行selector.select(xxx)操作获取到来的事件
+	 * 事件循环类,每个实例代表一个独立的线程,在线程启动后通过循环不断的执行selector.select(xxx)操作获取到来的事件
 	 * 1)创建selector
 	 * 2)将创建的channel(有ServerSocketChannel和SocketChannel类型)注册到selector上
 	 * 3)注册channel的同时并监听感兴趣的事件,如ServerSocketChannel类型的channel会监听SelectionKey.OP_ACCEPT类型的事件
@@ -99,6 +102,12 @@ public class SimpleServer {
 		 }
 	}
 	
+	/**
+	 * 多个SimpleNioEventLoop形成一个数组,用SimpleNioEventLoopGroup来描述
+	 * 一般情况下端口监听只需要一个线程那么会创建一个大小是1的SimpleNioEventLoopGroup,如new SimpleNioEventLoopGroup(1);
+	 * 对已经建立的连接会有多个线程处理那么会创建一个大小是nProcessor的SimpleNioEventLoopGroup,如new SimpleNioEventLoopGroup(nProcessor);
+	 *
+	 */
 	class SimpleNioEventLoopGroup{
 		 SelectorProvider selectorProvider = SelectorProvider.provider();
 		 SimpleEventLoop[] eventLoopArr = null;
@@ -121,9 +130,9 @@ public class SimpleServer {
 	
 	class SimpleServerBootstrap{
 		 //创建一个线程数组,实例中只包含一个事件循环线程,用来处理注册在selector上的channel的连接创建事件
-		SimpleNioEventLoopGroup bossGroup = new SimpleNioEventLoopGroup(1);
+		SimpleNioEventLoopGroup bossGroup;
 		//创建一个线程数组,实例中只包含多个事件循环线程,用来处理注册在selector上的channel的读写事件
-		SimpleNioEventLoopGroup workerGroup = new SimpleNioEventLoopGroup(4);
+		SimpleNioEventLoopGroup workerGroup;
 		//连接创建事件的channel和其事件到来的处理代码
 		Class<SimpleNioServerSocketChannel> simpleNioServerSocketChannel;
 		//读写建事件的channel和其事件到来的处理代码
@@ -148,11 +157,35 @@ public class SimpleServer {
 			simpleNioServerSocketChannel.serverSocketChannel.bind(new InetSocketAddress(port),100);
 		}
 	}
+	
+	/**
+	 *作为pipleline中的阀门,当收到消息时,消息会发送到管道中,管道中的阀门收到
+	 *消息后会对消息进行处理
+	 */
+	abstract class SimpleChannelHandler{
+		SimpleChannelHandler prev,next;
+		
+	    void channelRegistered(Object ctx) {
+	    	System.out.println("###");
+	    }
 
-	 class SimpleChannelPipeline{
-		 
-	 }
-	 class  SimpleNioServerSocketChannel{
+	    void channelActive(Object ctx) {
+	    	
+	    }
+
+	    void channelRead(Object ctx, Object msg) {
+	    	
+	    }
+	}
+	class SimpleChannelPipeline{
+		SimpleChannelHandler headHandler,tailHandler;
+	}
+	
+	/**
+	 * 当有连接创建的事件到来时,selector收到的事件会调用SimpleNioServerSocketChannel中的代码进行处理
+	 *
+	 */
+	class  SimpleNioServerSocketChannel{
 		SimpleServerBootstrap bootStrap ;
 		SelectorProvider defaultProvider = SelectorProvider.provider();
 		//作为锚点,监听到来的连接
@@ -165,6 +198,14 @@ public class SimpleServer {
 			try {
 				serverSocketChannel = defaultProvider.openServerSocketChannel();
 				channelPipeline = new SimpleChannelPipeline();
+				SimpleChannelHandler handler =  new SimpleChannelHandler() {
+					@Override
+				    void channelRegistered(Object ctx) {
+				    	System.out.println("###连接创建");
+				    }
+				};
+				channelPipeline.headHandler = handler;
+				
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
@@ -182,6 +223,10 @@ public class SimpleServer {
 		}
 	 }
  
+	/**
+	 * 当有读写事件到来时,selector收到的事件会调用SimpleNioSocketChannel中的代码进行处理
+	 *
+	 */
 	 class SimpleNioSocketChannel{
 		 //事件循环线程,线程中通过循环不断监听到来的读写事件
 		 SimpleEventLoop eventLoop;
@@ -206,7 +251,8 @@ public class SimpleServer {
 			socketChannel.register(eventLoop.selector, SelectionKey.OP_READ, this);
 		 }	 
 		 public void doRead(SelectionKey sk) {
-			
+			 //发送到管道中,利用管道中的阀门来处理到来的读写事件
+			channelPipeline.headHandler.channelRead(new Object(),sk);
 		 }
 	 }
 
