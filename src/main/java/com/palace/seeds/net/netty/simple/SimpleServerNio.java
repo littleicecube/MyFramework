@@ -1,7 +1,6 @@
-package com.palace.seeds.net.netty;
+package com.palace.seeds.net.netty.simple;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectableChannel;
@@ -15,7 +14,7 @@ import java.util.Set;
 
 import org.junit.Test;
 
-public class SimpleServer2 {
+public class SimpleServerNio {
 	//channel创建事件的处理代码
 	abstract class SimpleServerSocektChannel{
 		public void doRead(SelectionKey sk) {}
@@ -24,9 +23,7 @@ public class SimpleServer2 {
 	abstract class SimpleSocektChannel{
 		public void doRead(SelectionKey sk) {}
 		public void doWrite(SelectionKey sk) {}
-		public void handler(SelectableChannel ch) {
-			
-		}
+		public void handler(SelectableChannel ch) {}
 	}
 	
 	@Test
@@ -75,7 +72,7 @@ public class SimpleServer2 {
 			}
 		};
 
-
+		//连接创建事件处理线程
 		Thread	acceptThread = new Thread(new Runnable() {
 			@Override
 			public void run() {
@@ -113,7 +110,8 @@ public class SimpleServer2 {
 				}
 			}
 		},"连接创建事件处理线程");
-			
+		
+		//读写事件处理线程
 		Thread readAndWriteThread = new Thread(new Runnable() {
 			@Override
 			public void run() {

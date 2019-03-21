@@ -1,4 +1,4 @@
-package com.palace.seeds.net.netty;
+package com.palace.seeds.net.netty.simple;
 
 import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
@@ -71,7 +71,7 @@ public class SimpleServer {
 					 if(c > 0) {
 						 SelectionKey[] keySet = selectedKeySet.flip();
 						 //遍历建立的连接
-					for(SelectionKey seleKey : keySet) {
+						 for(SelectionKey seleKey : keySet) {
 						//处理建立的连接
 								if(seleKey != null) {
 									System.out.println(seleKey.toString());
@@ -83,7 +83,7 @@ public class SimpleServer {
 									}
 								}
 							}
-						 }
+					}
 				 }
 			 }catch(Exception e) {
 				 e.printStackTrace();

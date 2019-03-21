@@ -1,4 +1,4 @@
-package com.palace.seeds.net.netty;
+package com.palace.seeds.net.netty.simple;
 
 import org.junit.Test;
 
