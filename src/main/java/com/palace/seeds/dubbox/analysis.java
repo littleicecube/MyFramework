@@ -1,42 +1,5 @@
 package com.palace.seeds.dubbox;
 
-import io.netty.buffer.PoolChunkListMetric;
-import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.channel.ChannelConfig;
-import io.netty.channel.ChannelPipeline;
-import io.netty.channel.EventLoop;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.RecvByteBufAllocator;
-import io.netty.channel.nio.AbstractNioChannel;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.nio.NioTask;
-import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.util.internal.SocketUtils;
-
-import java.io.IOException;
-import java.nio.channels.CancelledKeyException;
-import java.nio.channels.SelectableChannel;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
-import java.security.AccessController;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-
-import com.alibaba.dubbo.common.extension.ExtensionLoader;
-import com.alibaba.dubbo.config.ServiceConfig;
-import com.alibaba.dubbo.rpc.Exporter;
-import com.alibaba.dubbo.rpc.Protocol;
-import com.alibaba.dubbo.rpc.ProxyFactory;
-
-
-
-
 public class analysis {
 
 	
@@ -70,7 +33,7 @@ class ExtensionLoader{
 
 
 
-要获取com.alibaba.dubbo.rpc.Protocol对应的描述,在Dubbo中用一个ExtensionLoader来描述
+com.alibaba.dubbo.rpc.Protocol对应的描述,在Dubbo中用一个ExtensionLoader来描述
 
 //1)表示当前ExtensionLoader实例描述的是com.alibaba.dubbo.rpc.Protocol信息
 private final Class<?> type = com.alibaba.dubbo.rpc.Protocol;
@@ -80,7 +43,7 @@ Holder:{
 	"thrift":com.alibaba.dubbo.rpc.protocol.thrift.ThriftProtocol,
 	"dubbo":com.alibaba.dubbo.rpc.protocol.dubbo.DubboProtocol
 }
-//3)type类型可能有几种实现方式,程序启动后解析配置保存在当前实例中,根据实现获取对应的名称
+//3)type类型可能有几种实现方式,程序启动后解析配置保存在当前实例中,根据实现class获取对应的名称
 private final ConcurrentMap<Class<?>, String> cachedNames = new ConcurrentHashMap<Class<?>, String>();
 cachedNames:{
 	com.alibaba.dubbo.rpc.protocol.thrift.ThriftProtocol:"thrift",
@@ -145,10 +108,12 @@ Protocol.export(Invoker){
 		com.alibaba.dubbo.common.URL url = arg0.getUrl();
 		//默认情况下是Dubbo类型的协议
 		String extName = url.getProtocol() == null ? "dubbo" : url.getProtocol() ;
-		//1)调用ExtensionLoader.getExtensionLoader( Protocol.class)根据Protocol.class从配置文件中获取所有配置的实现类有dubbo,thrift两种类型
-		//2)在调用getExtension(extName)根据extName从中选出一个实现,根据默认配置返回com.alibaba.dubbo.rpc.protocol.dubbo.DubboProtocol创建的实例
-		//3)Protocol.class中也配置了包装类ProtocolFilterWrapper和ProtocolListenerWrapper,在实例DubboProtocol创建完成后会被两个包装类进行包装
-		Protocol extension = ( Protocol) ExtensionLoader.getExtensionLoader( Protocol.class).getExtension(extName);
+		Protocol extension = ( Protocol) ExtensionLoader
+										//1)调用ExtensionLoader.getExtensionLoader( Protocol.class)根据Protocol.class从配置文件中加载所有的配置实现类,有dubbo,thrift两种类型
+									.getExtensionLoader( Protocol.class)
+										//2)在调用getExtension(extName)根据extName从中选出一个实现,根据默认配置返回com.alibaba.dubbo.rpc.protocol.dubbo.DubboProtocol创建的实例
+									.getExtension(extName);
+										//3)Protocol.class中也配置了包装类ProtocolFilterWrapper和ProtocolListenerWrapper,在实例DubboProtocol创建完成后会被两个包装类进行包装
 		return extension.export(arg0);
 }
 
@@ -158,6 +123,14 @@ public T getExtension(String name) {
 	Object 	instance = createExtension(name);
 	return (T) instance;
 }
+
+对要根据名称获取的实例进行增强
+1)比如获取dubbo对应的实例全限定名为com.alibaba.dubbo.rpc.protocol.dubbo.DubboProtocol
+2)实例化DubboProtocol
+3)遍历DubboProtocol中的方法,如果方法是set开头的则调用设置一些配置进去
+4)获取DubboProtocol对应的包装类信息,比如对应配置的包装类信息为ProtocolFilterWrapper,ProtocolListenerWrapper
+则实例化ProtocolFilterWrapper,ProtocolListenerWrapper然后将DubboProtocol的实例作为参数对其进行包装
+5)返回最终的实例
 private T createExtension(String name) {
 	//根据名称获取DubboProtocol并创建实例
 	Class<?> clazz = getExtensionClasses().get(name);

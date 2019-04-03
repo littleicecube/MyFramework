@@ -30,14 +30,15 @@ public class ExportDebug {
 	@Test
 	@SuppressWarnings({ "unused", "unchecked", "rawtypes" })
 	public void testExportProtocol() {
-		//获取代理类型的扩展信息,并生动态生成其适配器类
+		//获取代理工厂类型的扩展信息,并生动态生成其适配器类
 		ExtensionLoader  proxyLaoder = ExtensionLoader.getExtensionLoader(ProxyFactory.class);
 		setAdaptive(proxyLaoder, ProxyFactory$Adpative.class);
 		ProxyFactory proxyFactory = (ProxyFactory) proxyLaoder.getAdaptiveExtension();
-		//创建一下注册协议
-	    //<dubbo:registry address="zookeeper://127.0.0.1:2181"/>
+		
+		//创建一个注册协议
 		URL registryURL = new URL("registry","127.0.0.1",2181,"com.alibaba.dubbo.registry.zookeeper.ZookeeperRegistry");
 		registryURL = registryURL.addParameter("registry", "zookeeper");
+		
 		//创建一个URL用来描述一个需要对外提供服务的service和method
 		URL url = new URL("dubbo","127.0.0.1",8899,"com.palace.seeds.dubbox.debug.ExportDebug.IAccountService");
 		url = url.addParameterAndEncoded("methods", "add");
