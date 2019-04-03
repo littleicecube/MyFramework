@@ -41,12 +41,12 @@ public class ExportDebug {
 		
 		//创建一个URL用来描述一个需要对外提供服务的service和method
 		URL url = new URL("dubbo","127.0.0.1",8899,"com.palace.seeds.dubbox.debug.ExportDebug.IAccountService");
-		url = url.addParameterAndEncoded("methods", "add");
-		url = url.addParameter("interface", "com.palace.seeds.dubbox.debug.ExportDebug.IAccountService");
-		url = url.addParameter("registry", "zookeeper");
-		url = url.addParameter("timeout", 1000);
-		url = url.addParameter("scope", "remote");
-		url = url.addParameter("retries", 2);
+		url.addParameterAndEncoded("methods", "add")
+		.addParameter("interface", "com.palace.seeds.dubbox.debug.ExportDebug.IAccountService")
+		.addParameter("registry", "zookeeper")
+		.addParameter("timeout", 1000)
+		.addParameter("scope", "remote")
+		.addParameter("retries", 2);
 		
 		
 	    //创建一个Protocol.class类型的ExtensionLoader
