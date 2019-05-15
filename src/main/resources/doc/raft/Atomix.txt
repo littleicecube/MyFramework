@@ -1,0 +1,107 @@
+DefaultRaftServer
+	RaftStorage
+	RaftContext
+		RaftStorage
+RaftLog
+	
+  public SegmentedJournal(
+      String name,
+      StorageLevel storageLevel,
+      File directory,
+      Serializer serializer,
+      int maxSegmentSize,
+      int maxEntriesPerSegment,
+      double indexDensity,
+      int cacheSize) {
+    this.name = checkNotNull(name, "name cannot be null");
+    this.storageLevel = checkNotNull(storageLevel, "storageLevel cannot be null");
+    this.directory = checkNotNull(directory, "directory cannot be null");
+    this.serializer = checkNotNull(serializer, "serializer cannot be null");
+    this.maxSegmentSize = maxSegmentSize;
+    this.maxEntriesPerSegment = maxEntriesPerSegment;
+    this.indexDensity = indexDensity;
+    this.cacheSize = cacheSize;
+    open();
+    this.writer = openWriter();
+  }
+  
+  private void open() {
+    // Load existing log segments from disk.
+    for (JournalSegment<E> segment : loadSegments()) {
+      segments.put(segment.descriptor().index(), segment);
+    }
+
+    // If a segment doesn't already exist, create an initial segment starting at index 1.
+    if (!segments.isEmpty()) {
+      currentSegment = segments.lastEntry().getValue();
+    } else {
+      JournalSegmentDescriptor descriptor = JournalSegmentDescriptor.newBuilder()
+          .withId(1)
+          .withIndex(1)
+          .withMaxSegmentSize(maxSegmentSize)
+          .withMaxEntries(maxEntriesPerSegment)
+          .build();
+
+      currentSegment = createSegment(descriptor);
+      currentSegment.descriptor().update(System.currentTimeMillis());
+
+      segments.put(1L, currentSegment);
+    }
+  }
+  
+  
+  
+  
+  public RaftContext(
+      String name,
+      MemberId localMemberId,
+      RaftServerProtocol protocol,
+      RaftStorage storage,
+      RaftServiceFactoryRegistry serviceFactories,
+      ThreadModel threadModel,
+      int threadPoolSize) {
+    this.name = checkNotNull(name, "name cannot be null");
+    this.protocol = checkNotNull(protocol, "protocol cannot be null");
+    this.storage = checkNotNull(storage, "storage cannot be null");
+    this.serviceFactories = checkNotNull(serviceFactories, "registry cannot be null");
+    this.log = ContextualLoggerFactory.getLogger(getClass(), LoggerContext.builder(RaftServer.class)
+        .addValue(name)
+        .build());
+
+    String baseThreadName = String.format("raft-server-%s", name);
+    this.threadContext = new SingleThreadContext(namedThreads(baseThreadName, log));
+    this.loadContext = new SingleThreadContext(namedThreads(baseThreadName + "-load", log));
+    this.stateContext = new SingleThreadContext(namedThreads(baseThreadName + "-state", log));
+
+    this.threadContextFactory = threadModel.factory(baseThreadName + "-%d", threadPoolSize, log);
+
+    this.loadMonitor = new LoadMonitor(LOAD_WINDOW_SIZE, HIGH_LOAD_THRESHOLD, loadContext);
+
+    // Open the metadata store.
+    this.meta = storage.openMetaStore();
+
+    // Load the current term and last vote from disk.
+    this.term = meta.loadTerm();
+    this.lastVotedFor = meta.loadVote();
+
+    // Construct the core log, reader, writer, and compactor.
+	根据Storage中配置的dir加载其中的数据封装成JournalSegment,在生成SegmentedJournal,作为参数生成一个
+	new RaftLog(journalBuilder.build(), flushOnCommit);
+    this.raftLog = storage.openLog();
+
+	RaftLogWriter
+    this.logWriter = raftLog.writer();
+	RaftLogReader
+    this.logReader = raftLog.openReader(1, RaftLogReader.Mode.ALL);
+
+    // Open the snapshot store.
+    this.snapshotStore = storage.openSnapshotStore();
+
+    // Create a new internal server state machine.
+    this.stateMachine = new RaftServiceManager(this, stateContext, threadContextFactory);
+
+    this.cluster = new RaftClusterContext(localMemberId, this);
+
+    // Register protocol listeners.
+    registerHandlers(protocol);
+  }

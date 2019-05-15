@@ -1,0 +1,1104 @@
+
+1)根据snapshort路径信息读取目录下的snap文件,获取最近有效的一个文件从中获取
+有效的信息保存到内存中
+2)如果wal目录下存在文件,则读取文件,进行反序列化,反序列化后判断每个记录的类型
+	如果是entryType类型则将其保存到内存中 append(ents[:e.Index-w.start.Index-1], e)最后返回
+	如果是stateType类型则更新到当前内存中,替换上一次的值
+	如果是metadataType类型则更新到当前内存中,替换上一次的值
+	如果是crcType类型则进行crc校验
+	如果是snapshotType类型则更新到当前内存中,替换上一次的值
+3)为raftNode创建一个存储引擎rc.raftStorage = raft.NewMemoryStorage()
+	type MemoryStorage struct {
+		sync.Mutex
+		hardState pb.HardState
+		snapshot  pb.Snapshot
+		ents []pb.Entry
+	}
+	存储引擎的初始化:
+	rc.raftStorage = raft.NewMemoryStorage()
+		return &MemoryStorage{
+			ents: make([]pb.Entry, 1),
+		}
+	if snapshot != nil {
+		rc.raftStorage.ApplySnapshot(*snapshot)
+	}
+	rc.raftStorage.SetHardState(st)
+	
+4)如果1)读取的snapshot信息不是空的则将其应用到存储引擎中rc.raftStorage.ApplySnapshot(*snapshot)
+5)如果2)中读取的ents信息不为空,则将其应用到存储引擎中rc.raftStorage.Append(ents)
+	func (ms *MemoryStorage) Append(entries []pb.Entry) error {
+		first := ms.firstIndex()
+		last := entries[0].Index + uint64(len(entries)) - 1
+		if last < first {
+			return nil
+		}
+		// truncate compacted entries wal中的就是wal中的，在wal中存在就不应该在snapshort中存在,这里是临时返回一个范围的数据故可以这样做，但是并不能表示差值进入到了snapshort中
+		if first > entries[0].Index {
+			entries = entries[first-entries[0].Index:]
+		}
+		offset := entries[0].Index - ms.ents[0].Index
+		switch {
+		case uint64(len(ms.ents)) > offset:
+			ms.ents = append([]pb.Entry{}, ms.ents[:offset]...)
+			ms.ents = append(ms.ents, entries...)
+		case uint64(len(ms.ents)) == offset:
+			ms.ents = append(ms.ents, entries...)
+		default:
+			raftLogger.Panicf("missing log entry [last: %d, append at: %d]",
+				ms.lastIndex(), entries[0].Index)
+		}
+		return nil
+	}
+2)读取完snapshot和wal并将其应用到rc.raftStorage后,创建raft.Config实例作为创建raft节点时的参数,其中
+	rc.raftStorage通过raft.Config传递到raft节点中
+	c := &raft.Config{
+			ID:              uint64(rc.id),
+			ElectionTick:    10,
+			HeartbeatTick:   1,
+			Storage:         rc.raftStorage,
+			MaxSizePerMsg:   1024 * 1024,
+			MaxInflightMsgs: 256,
+		}
+3)创建raft节点是先创建一个raftlog将c.Storage和c.Logger进行包装
+	3.1)raftlog := newLog(c.Storage, c.Logger)
+	总的来说raftLog中包装了已经持久化的日志即在Storage中的日志
+	在创建一个新的日志类型时都要先获取已经提交的日志的index,然后才能确定当前
+	要新创建日志的index如:pb.Entry{Type: pb.EntryConfChange, Term: 1, Index: r.raftLog.lastIndex() + 1, Data: d}
+	其中靠r.raftLog.lastIndex()来获取当前节点中最后一个日志的index,其获取策略为先从最不稳定的结构中获取即unstable
+	如果这个结构为空,则从稳定的结构中获取即storage中,而在程序启动后的初始化过程中,是先初始化Storage中的信息
+		type raftLog struct {
+			// storage contains all stable entries since the last snapshot.
+			storage Storage
+				type MemoryStorage struct {
+					sync.Mutex
+					hardState pb.HardState
+					snapshot  pb.Snapshot
+					ents []pb.Entry
+				}
+			// unstable contains all unstable entries and snapshot.
+			// they will be saved into storage.
+			unstable unstable
+				type unstable struct {
+					// the incoming unstable snapshot, if any.
+					snapshot *pb.Snapshot
+					// all entries that have not yet been written to storage.
+					entries []pb.Entry
+					offset  uint64
+
+					logger Logger
+				}
+				
+			// committed is the highest log position that is known to be in
+			// stable storage on a quorum of nodes.
+			committed uint64
+			// applied is the highest log position that the application has
+			// been instructed to apply to its state machine.
+			// Invariant: applied <= committed
+			applied uint64
+
+			logger Logger
+		}
+		
+		func newLog(storage Storage, logger Logger) *raftLog {
+			log := &raftLog{
+				storage: storage,
+				logger:  logger,
+			}
+			firstIndex, err := storage.FirstIndex()
+			if err != nil {
+				panic(err) // TODO(bdarnell)
+			}
+			lastIndex, err := storage.LastIndex()
+			if err != nil {
+				panic(err) // TODO(bdarnell)
+			}
+			
+			//初始化unstable的index值
+			log.unstable.offset = lastIndex + 1
+			log.unstable.logger = logger
+			
+			// Initialize our committed and applied pointers to the time of the last compaction.
+			log.committed = firstIndex - 1
+			log.applied = firstIndex - 1
+			return log
+		}
+
+	3.2)日志的问题
+	func (l *raftLog) firstIndex() uint64 {
+		if i, ok := l.unstable.maybeFirstIndex(); ok {
+			return i
+		}
+		index, err := l.storage.FirstIndex()
+		if err != nil {
+			panic(err) // TODO(bdarnell)
+		}
+		return index
+	}
+
+	func (u *unstable) maybeFirstIndex() (uint64, bool) {
+		if u.snapshot != nil {
+			return u.snapshot.Metadata.Index + 1, true
+		}
+		return 0, false
+	}
+	raftLog.unstable在初始化的时候只是对raftLog.unstable.offset进行了初始化,并未对raftLog.unstable.snapshot做初始化,
+	但是从上面的代码看raftLog.firstIndex的获取顺序
+	raftlog.unstable.snapshot.xx-->raftlog.storage.firstIndex
+	
+	
+	func (l *raftLog) lastIndex() uint64 {
+		if i, ok := l.unstable.maybeLastIndex(); ok {
+			return i
+		}
+		i, err := l.storage.LastIndex()
+		if err != nil {
+			panic(err) // TODO(bdarnell)
+		}
+		return i
+	}
+
+	func (u *unstable) maybeLastIndex() (uint64, bool) {
+		if l := len(u.entries); l != 0 {
+			return u.offset + uint64(l) - 1, true
+		}
+		if u.snapshot != nil {
+			return u.snapshot.Metadata.Index, true
+		}
+		return 0, false
+	}
+	raftlog.unstable.offset的初始化的值是storage.lastIndex+1值,从上面的代码中可以看出,raftlog.lastIndex的获取顺序
+	raftlog.unstable.entries-->raftlog.unstable.snapshot-->raftlog.storage.lastIndex
+	
+	storage.firstIndex = ents[0].index;
+	storage.lastIndex = ents[0].index + len(ents)
+	
+	A)
+	func (ms *MemoryStorage) lastIndex() uint64 {
+		return ms.ents[0].Index + uint64(len(ms.ents)) - 1
+	}
+	B)
+	storage.lastIndex = ents[0].index + len(ents)
+	C)
+	raftlog.unstable.offset = storage.lastIndex + 1
+	after == u.offset+uint64(len(u.entries)):
+	从A,B,C中可以看出lastIndex的计算一般是从ent[0].index + len(ents)得到
+	而在C中也就是unstable中是通过u.offset + len(ents)计算
+	
+	3.3)hs, cs, err := c.Storage.InitialState()
+	创建raft节点:
+	r := &raft{
+		id:                        c.ID,
+		lead:                      None,
+		isLearner:                 false,
+		raftLog:                   raftlog,
+		maxMsgSize:                c.MaxSizePerMsg,
+		maxInflight:               c.MaxInflightMsgs,
+		prs:                       make(map[uint64]*Progress),
+		learnerPrs:                make(map[uint64]*Progress),
+		electionTimeout:           c.ElectionTick,
+		heartbeatTimeout:          c.HeartbeatTick,
+		logger:                    c.Logger,
+		checkQuorum:               c.CheckQuorum,
+		preVote:                   c.PreVote,
+		readOnly:                  newReadOnly(c.ReadOnlyOption),
+		disableProposalForwarding: c.DisableProposalForwarding,
+	}
+	//设置节点状态
+	if !isHardStateEqual(hs, emptyState) {
+		r.loadState(hs)
+	}
+	//设置applied值
+	if c.Applied > 0 { 
+		raftlog.appliedTo(c.Applied)
+	}
+	//将当前节点变成跟随者,设置term = 1,领导者为None
+	r.becomeFollower(1, None)
+
+	
+
+	func (u *unstable) truncateAndAppend(ents []pb.Entry) {
+		after := ents[0].Index
+		switch {
+		//u.offset+uint64(len(u.entries))的index终点,正好是ent[0].index的起点
+		//故直接在u.entries的后面追加即可
+		case after == u.offset+uint64(len(u.entries)):
+			u.entries = append(u.entries, ents...)
+		case after <= u.offset:
+		//after作为起点,比u.offset代表的起点还早,则直接替换原有的u.entries和offset
+			u.logger.Infof("replace the unstable entries from index %d", after)
+			u.offset = after
+			u.entries = ents
+		default:
+		//执行到这里的表示after代表的起点在u.offset代表的起点和u.offset+len(u.entries)代表的终点之间
+		//故需要将两者融合拼接
+			u.logger.Infof("truncate the unstable entries before index %d", after)
+			u.entries = append([]pb.Entry{}, u.slice(u.offset, after)...)
+			u.entries = append(u.entries, ents...)
+		}
+	}
+	需要注意的是:unstable中没有设置单独的变量记载firstIndex和lastIndex而是通过ents中的index和ents的len
+	计算得出firstIndex和lastIndex的值.
+	
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+1)raft设置当前节点为follower,当前节点的leader信息为none,故还是处于启动状态,不能对外提供服务
+当前节点时钟产生心跳信息,信息被发送到Node的channel中
+raft算法主线程在循环过程中发现channel中有数据则获取数据,进行处理
+
+
+
+
+
+
+
+
+现在面临的问题：
+snapshot日志读取后和wal日志读取后的衔接问题
+proposal提交给raft后在本地的保存和分发问题
+proposal状态由unstable->committed->applied的演变
+
+
+
+三个节点:
+	1.raftNode节点,包含snapshot日志,wal日志的初始化.网络节点的初始化
+	2.node节点,主要定义一些交互用到的channel
+	3.raft节点,主要用来实现raft算法
+启动过程:
+	1)raftNode启动后初始化snapshotter日志,wal日志
+	2)创建raft实例,初始化NodeId,心跳时间,选举超时时间等基本信息,调用r.becomeFollower(r.Term, None)设置
+		当前节点为follower,设置当前节点的leader=none
+	3)创建node节点,初始化其中的管道(propc,recvc,readc,tickc,confc)配置信息
+	4)将raft节点带入到node的方法体中,执行node中的run()方法
+	5)执行raftNode外围工作,初始化http相关的信息,启动httpServer
+	6)启动serverChannels等信息
+
+	
+	
+func (n *node) run(r *raft) {
+	var propc chan pb.Message
+	var readyc chan Ready
+	var advancec chan struct{}
+	var prevLastUnstablei, prevLastUnstablet uint64
+	var havePrevLastUnstablei bool
+	var prevSnapi uint64
+	var rd Ready
+
+	lead := None
+	prevSoftSt := r.softState()
+	prevHardSt := emptyState
+
+	for {
+		if advancec != nil {
+			readyc = nil
+		} else {
+			rd = newReady(r, prevSoftSt, prevHardSt)
+			if rd.containsUpdates() {
+				readyc = n.readyc
+			} else {
+				readyc = nil
+			}
+		}
+		//节点刚启动时r.lead == none
+		if lead != r.lead {
+			if r.hasLeader() {
+				if lead == None {
+					r.logger.Infof("raft.node: %x elected leader %x at term %d", r.id, r.lead, r.Term)
+				} else {
+					r.logger.Infof("raft.node: %x changed leader from %x to %x at term %d", r.id, lead, r.lead, r.Term)
+				}
+				propc = n.propc
+			} else {
+				r.logger.Infof("raft.node: %x lost leader %x at term %d", r.id, lead, r.Term)
+				propc = nil
+			}
+			lead = r.lead
+		}
+		
+		//节点刚启动时,propc,recvc,confc,readyc,advancec基本上没有数据
+		//只有tickc中因为节点自身的节拍的启动会有数据
+		select {
+		// TODO: maybe buffer the config propose if there exists one (the way
+		// described in raft dissertation)
+		// Currently it is dropped in Step silently.
+		case m := <-propc:
+			m.From = r.id
+			r.Step(m)
+		case m := <-n.recvc:
+			// filter out response message from unknown From.
+			if pr := r.getProgress(m.From); pr != nil || !IsResponseMsg(m.Type) {
+				r.Step(m) // raft never returns an error
+			}
+		case cc := <-n.confc:
+			if cc.NodeID == None {
+				select {
+				case n.confstatec <- pb.ConfState{
+					Nodes:    r.nodes(),
+					Learners: r.learnerNodes()}:
+				case <-n.done:
+				}
+				break
+			}
+			switch cc.Type {
+			case pb.ConfChangeAddNode:
+				r.addNode(cc.NodeID)
+			case pb.ConfChangeAddLearnerNode:
+				r.addLearner(cc.NodeID)
+			case pb.ConfChangeRemoveNode:
+				// block incoming proposal when local node is
+				// removed
+				if cc.NodeID == r.id {
+					propc = nil
+				}
+				r.removeNode(cc.NodeID)
+			case pb.ConfChangeUpdateNode:
+			default:
+				panic("unexpected conf type")
+			}
+			select {
+			case n.confstatec <- pb.ConfState{
+				Nodes:    r.nodes(),
+				Learners: r.learnerNodes()}:
+			case <-n.done:
+			}
+		case <-n.tickc:
+			r.tick()
+		case readyc <- rd:
+			if rd.SoftState != nil {
+				prevSoftSt = rd.SoftState
+			}
+			if len(rd.Entries) > 0 {
+				prevLastUnstablei = rd.Entries[len(rd.Entries)-1].Index
+				prevLastUnstablet = rd.Entries[len(rd.Entries)-1].Term
+				havePrevLastUnstablei = true
+			}
+			if !IsEmptyHardState(rd.HardState) {
+				prevHardSt = rd.HardState
+			}
+			if !IsEmptySnap(rd.Snapshot) {
+				prevSnapi = rd.Snapshot.Metadata.Index
+			}
+
+			r.msgs = nil
+			r.readStates = nil
+			advancec = n.advancec
+		case <-advancec:
+			if prevHardSt.Commit != 0 {
+				r.raftLog.appliedTo(prevHardSt.Commit)
+			}
+			if havePrevLastUnstablei {
+				r.raftLog.stableTo(prevLastUnstablei, prevLastUnstablet)
+				havePrevLastUnstablei = false
+			}
+			r.raftLog.stableSnapTo(prevSnapi)
+			advancec = nil
+		case c := <-n.status:
+			c <- getStatus(r)
+		case <-n.stop:
+			close(n.done)
+			return
+		}
+	}
+}
+	
+	
+	
+	
+基本流程:
+	节点启动完成后,
+	node节点中主要定义了propc,recvc,confc,readc,tickc等channel,这些channel作为桥梁
+	连接raft节点和raftNode节点
+	存在两条主线:
+		1)心跳:当前node以固定频率发送心跳信息到channel中,channel中的数据触发raft中的操作
+		2)外界交互
+		
+	
+
+
+type raftNode struct {
+	proposeC    <-chan string           	//A1)初始化
+	confChangeC <-chan raftpb.ConfChange 	//A1)初始化
+	commitC     chan<- *string           	//A1)初始化
+	errorC      chan<- error             	//A1)初始化
+
+	id          int      					// A1)初始化
+	peers       []string 					// A1)初始化
+	join        bool     					// A1)初始化
+	waldir      string   					// A1)初始化
+	snapdir     string   					// A1)初始化
+	getSnapshot func() ([]byte, error)		// A1)初始化
+	lastIndex   uint64 // index of log at start
+
+	confState     raftpb.ConfState
+	snapshotIndex uint64
+	appliedIndex  uint64
+
+	// raft backing for the commit/error channel
+	node        raft.Node
+	raftStorage *raft.MemoryStorage			//A3.1)在完成snapshot信息和wal信息的合并后生成raftStorage实例
+											//将解析好的snapshot信息带入到raftStorage中进行合并初始化,在将解析好的wal信息
+											//带入到raftStorage中进行合并初始化
+	wal         *wal.WAL					//A3)根据waldir中路径信息,读取日志信息进行反序列化
+											//	在结合2)中初始化的snapshotter信息,最终生成wal信息
+
+	snapshotter      *snap.Snapshotter		//A2)根据sanpdir中的路径信息,读取snapshot信息反序列化
+	snapshotterReady chan *snap.Snapshotter // signals when snapshotter is ready
+
+	snapCount uint64						//A1)初始化
+	transport *rafthttp.Transport
+	stopc     chan struct{} // signals proposal channel closed
+	httpstopc chan struct{} // signals http server to shutdown
+	httpdonec chan struct{} // signals http server shutdown complete
+}
+
+
+
+type raft struct {
+	id uint64								//B1)初始化
+
+	Term uint64								//B1)初始化
+	Vote uint64								//B1)初始化
+
+	readStates []ReadState
+
+	// the log
+	raftLog *raftLog
+
+	maxInflight int							//B1)初始化
+	maxMsgSize  uint64						//B1)初始化
+	prs         map[uint64]*Progress		//B1)初始化
+	learnerPrs  map[uint64]*Progress		//B1)初始化
+
+	state StateType
+
+	// isLearner is true if the local raft node is a learner.
+	isLearner bool
+
+	votes map[uint64]bool
+
+	msgs []pb.Message
+
+	// the leader id
+	lead uint64
+	// leadTransferee is id of the leader transfer target when its value is not zero.
+	// Follow the procedure defined in raft thesis 3.10.
+	leadTransferee uint64
+	// Only one conf change may be pending (in the log, but not yet
+	// applied) at a time. This is enforced via pendingConfIndex, which
+	// is set to a value >= the log index of the latest pending
+	// configuration change (if any). Config changes are only allowed to
+	// be proposed if the leader's applied index is greater than this
+	// value.
+	pendingConfIndex uint64
+
+	readOnly *readOnly						//B1)初始化
+
+	// number of ticks since it reached last electionTimeout when it is leader
+	// or candidate.
+	// number of ticks since it reached last electionTimeout or received a
+	// valid message from current leader when it is a follower.
+	electionElapsed int						//B1)初始化
+
+	// number of ticks since it reached last heartbeatTimeout.
+	// only leader keeps heartbeatElapsed.
+	heartbeatElapsed int					//B1)初始化
+		
+	checkQuorum bool						//B1)初始化
+	preVote     bool						//B1)初始化
+
+	heartbeatTimeout int
+	electionTimeout  int
+	// randomizedElectionTimeout is a random number between
+	// [electiontimeout, 2 * electiontimeout - 1]. It gets reset
+	// when raft changes its state to follower or candidate.
+	randomizedElectionTimeout int
+	disableProposalForwarding bool
+
+	tick func()
+	step stepFunc
+
+	logger Logger							//B1)初始化
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+raftNode是raft的一个节点代表。节点启动的时候
+根据waldir的路径初始化wal日志保存在内存中
+根据snapdir的路径初始化快照日志保存在内存中
+初始化一些配置信息如：当前节点的id，集群中节点的个数,日志提案管道proposeC，日志已提交管道commitC等
+
+
+type node struct {
+	propc      chan pb.Message
+	recvc      chan pb.Message
+	confc      chan pb.ConfChange
+	confstatec chan pb.ConfState
+	readyc     chan Ready
+	advancec   chan struct{}
+	tickc      chan struct{}
+	done       chan struct{}
+	stop       chan struct{}
+	status     chan chan Status
+
+	logger Logger
+}
+
+
+raft.Config{
+	ID:              uint64(rc.id),
+	ElectionTick:    10,
+	HeartbeatTick:   1,
+	Storage:         rc.raftStorage,
+	MaxSizePerMsg:   1024 * 1024,
+	MaxInflightMsgs: 256,
+}
+
+raft节点的配置信息
+
+
+raft{
+	id:                        c.ID,
+	lead:                      None,
+	isLearner:                 false,
+	raftLog:                   raftlog,
+	maxMsgSize:                c.MaxSizePerMsg,
+	maxInflight:               c.MaxInflightMsgs,
+	prs:                       make(map[uint64]*Progress),
+	learnerPrs:                make(map[uint64]*Progress),
+	electionTimeout:           c.ElectionTick,
+	heartbeatTimeout:          c.HeartbeatTick,
+	logger:                    c.Logger,
+	checkQuorum:               c.CheckQuorum,
+	preVote:                   c.PreVote,
+	readOnly:                  newReadOnly(c.ReadOnlyOption),
+	disableProposalForwarding: c.DisableProposalForwarding,
+}
+raft节点运行时的一些基本信息
+
+raftLog{
+	storage Storage
+	unstable unstable
+	committed uint64
+	applied uint64
+	logger Logger
+}
+
+unstable{
+	snapshot *pb.Snapshot
+	entries []pb.Entry
+	offset  uint64
+	logger Logger
+}
+
+Progress{
+	Match, Next uint64
+	State ProgressStateType
+	Paused bool
+	PendingSnapshot uint64
+	RecentActive bool
+	ins *inflights
+	IsLearner bool
+}
+
+raft在运行过程中通过网络接收提案信息，提案信息被分发广播到其他节点，并根据其他节点的响应
+决定提案是否转变为commintted信息。
+raft节点中根据raftLog句柄将提交的提案信息(proposal)保存到raftLog.unstable中，然后分发提案信息(proposal)
+给集群中的其他节点，并获取返回信息，根据返回结果决定proposal是否转化为committed信息
+
+
+
+
+type WAL struct {
+	dir string // the living directory of the underlay files
+
+	// dirFile is a fd for the wal directory for syncing on Rename
+	dirFile *os.File
+
+	metadata []byte           // metadata recorded at the head of each WAL
+	state    raftpb.HardState // hardstate recorded at the head of WAL
+
+	start     walpb.Snapshot // snapshot to start reading
+	decoder   *decoder       // decoder to decode records
+	readClose func() error   // closer for decode reader
+
+	mu      sync.Mutex
+	enti    uint64   // index of the last entry saved to the wal
+	encoder *encoder // encoder to encode records
+
+	locks []*fileutil.LockedFile // the locked files the WAL holds (the name is increasing)
+	fp    *filePipeline
+}
+
+
+
+
+
+
+func (u *unstable) truncateAndAppend(ents []pb.Entry) {
+	after := ents[0].Index
+	switch {
+	case after == u.offset+uint64(len(u.entries)):
+		// after is the next index in the u.entries
+		// directly append
+		u.entries = append(u.entries, ents...)
+	case after <= u.offset:
+		//在newLog中初始化u.offset = lastIndex+1 且ents中的每个ent.Index = lastIndex + 1 +i;
+		//li := r.raftLog.lastIndex()
+		//	for i := range es {
+		//		es[i].Term = r.Term
+		//		es[i].Index = li + 1 + uint64(i)
+		//	}
+		//也就是说ents[0].Index >= u.offset的,但是在此这个判断条件是ents[0].Index <= u.offset
+		//ents中的额Index一旦经过赋值就不会改变了，但是这里出现这种情况，应该是在其他线程中
+		//u.offset被重新修改，且是递增修改，增加了u.offset的长度，导致比ents[0].Index大
+		u.logger.Infof("replace the unstable entries from index %d", after)
+		// The log is being truncated to before our current offset
+		// portion, so set the offset and replace the entries
+		u.offset = after
+		u.entries = ents
+	default:
+		// truncate to after and copy to u.entries
+		// then append
+		u.logger.Infof("truncate the unstable entries before index %d", after)
+		u.entries = append([]pb.Entry{}, u.slice(u.offset, after)...)
+		u.entries = append(u.entries, ents...)
+	}
+}
+
+
+func newLog(storage Storage, logger Logger) *raftLog {
+	if storage == nil {
+		log.Panic("storage must not be nil")
+	}
+	log := &raftLog{
+		storage: storage,
+		logger:  logger,
+	}
+	firstIndex, err := storage.FirstIndex()
+	if err != nil {
+		panic(err) // TODO(bdarnell)
+	}
+	lastIndex, err := storage.LastIndex()
+	if err != nil {
+		panic(err) // TODO(bdarnell)
+	}
+	log.unstable.offset = lastIndex + 1
+	log.unstable.logger = logger
+	// Initialize our committed and applied pointers to the time of the last compaction.
+	log.committed = firstIndex - 1
+	log.applied = firstIndex - 1
+
+	return log
+}
+
+
+func (t *Transport) Handler() http.Handler {
+	pipelineHandler := newPipelineHandler(t, t.Raft, t.ClusterID)
+	streamHandler := newStreamHandler(t, t, t.Raft, t.ID, t.ClusterID)
+	snapHandler := newSnapshotHandler(t, t.Raft, t.Snapshotter, t.ClusterID)
+	mux := http.NewServeMux()
+	mux.Handle(RaftPrefix, pipelineHandler)
+	mux.Handle(RaftStreamPrefix+"/", streamHandler)
+	mux.Handle(RaftSnapshotPrefix, snapHandler)
+	mux.Handle(ProbingPrefix, probing.NewHandler())
+	return mux
+}
+
+
+
+
+
+func (rc *raftNode) startRaft() {
+	if !fileutil.Exist(rc.snapdir) {
+		if err := os.Mkdir(rc.snapdir, 0750); err != nil {
+			log.Fatalf("raftexample: cannot create dir for snapshot (%v)", err)
+		}
+	}
+	rc.snapshotter = snap.New(rc.snapdir)
+	rc.snapshotterReady <- rc.snapshotter
+
+	oldwal := wal.Exist(rc.waldir)
+	rc.wal = rc.replayWAL()
+
+	rpeers := make([]raft.Peer, len(rc.peers))
+	for i := range rpeers {
+		rpeers[i] = raft.Peer{ID: uint64(i + 1)}
+	}
+	c := &raft.Config{
+		ID:              uint64(rc.id),
+		ElectionTick:    10,
+		HeartbeatTick:   1,
+		Storage:         rc.raftStorage,
+		MaxSizePerMsg:   1024 * 1024,
+		MaxInflightMsgs: 256,
+	}
+
+	if oldwal {
+		rc.node = raft.RestartNode(c)
+	} else {
+		startPeers := rpeers
+		if rc.join {
+			startPeers = nil
+		}
+		rc.node = raft.StartNode(c, startPeers)
+	}
+
+	rc.transport = &rafthttp.Transport{
+		ID:          types.ID(rc.id),
+		ClusterID:   0x1000,
+		Raft:        rc,
+		ServerStats: stats.NewServerStats("", ""),
+		LeaderStats: stats.NewLeaderStats(strconv.Itoa(rc.id)),
+		ErrorC:      make(chan error),
+	}
+
+	rc.transport.Start()
+	for i := range rc.peers {
+		if i+1 != rc.id {
+			rc.transport.AddPeer(types.ID(i+1), []string{rc.peers[i]})
+		}
+	}
+
+	go rc.serveRaft()
+	go rc.serveChannels()
+}
+
+
+// MemoryStorage implements the Storage interface backed by an
+// in-memory array.
+type MemoryStorage struct {
+	// Protects access to all fields. Most methods of MemoryStorage are
+	// run on the raft goroutine, but Append() is run on an application
+	// goroutine.
+	sync.Mutex
+
+	hardState pb.HardState
+	snapshot  pb.Snapshot
+	// ents[i] has raft log position i+snapshot.Metadata.Index
+	ents []pb.Entry
+}
+
+
+
+
+// Config contains the parameters to start a raft.
+type Config struct {
+	// ID is the identity of the local raft. ID cannot be 0.
+	ID uint64
+
+	// peers contains the IDs of all nodes (including self) in the raft cluster. It
+	// should only be set when starting a new raft cluster. Restarting raft from
+	// previous configuration will panic if peers is set. peer is private and only
+	// used for testing right now.
+	peers []uint64
+
+	// learners contains the IDs of all learner nodes (including self if the
+	// local node is a learner) in the raft cluster. learners only receives
+	// entries from the leader node. It does not vote or promote itself.
+	learners []uint64
+
+	// ElectionTick is the number of Node.Tick invocations that must pass between
+	// elections. That is, if a follower does not receive any message from the
+	// leader of current term before ElectionTick has elapsed, it will become
+	// candidate and start an election. ElectionTick must be greater than
+	// HeartbeatTick. We suggest ElectionTick = 10 * HeartbeatTick to avoid
+	// unnecessary leader switching.
+	ElectionTick int
+	// HeartbeatTick is the number of Node.Tick invocations that must pass between
+	// heartbeats. That is, a leader sends heartbeat messages to maintain its
+	// leadership every HeartbeatTick ticks.
+	HeartbeatTick int
+
+	// Storage is the storage for raft. raft generates entries and states to be
+	// stored in storage. raft reads the persisted entries and states out of
+	// Storage when it needs. raft reads out the previous state and configuration
+	// out of storage when restarting.
+	Storage Storage
+	// Applied is the last applied index. It should only be set when restarting
+	// raft. raft will not return entries to the application smaller or equal to
+	// Applied. If Applied is unset when restarting, raft might return previous
+	// applied entries. This is a very application dependent configuration.
+	Applied uint64
+
+	// MaxSizePerMsg limits the max size of each append message. Smaller value
+	// lowers the raft recovery cost(initial probing and message lost during normal
+	// operation). On the other side, it might affect the throughput during normal
+	// replication. Note: math.MaxUint64 for unlimited, 0 for at most one entry per
+	// message.
+	MaxSizePerMsg uint64
+	// MaxInflightMsgs limits the max number of in-flight append messages during
+	// optimistic replication phase. The application transportation layer usually
+	// has its own sending buffer over TCP/UDP. Setting MaxInflightMsgs to avoid
+	// overflowing that sending buffer. TODO (xiangli): feedback to application to
+	// limit the proposal rate?
+	MaxInflightMsgs int
+
+	// CheckQuorum specifies if the leader should check quorum activity. Leader
+	// steps down when quorum is not active for an electionTimeout.
+	CheckQuorum bool
+
+	// PreVote enables the Pre-Vote algorithm described in raft thesis section
+	// 9.6. This prevents disruption when a node that has been partitioned away
+	// rejoins the cluster.
+	PreVote bool
+
+	// ReadOnlyOption specifies how the read only request is processed.
+	//
+	// ReadOnlySafe guarantees the linearizability of the read only request by
+	// communicating with the quorum. It is the default and suggested option.
+	//
+	// ReadOnlyLeaseBased ensures linearizability of the read only request by
+	// relying on the leader lease. It can be affected by clock drift.
+	// If the clock drift is unbounded, leader might keep the lease longer than it
+	// should (clock can move backward/pause without any bound). ReadIndex is not safe
+	// in that case.
+	// CheckQuorum MUST be enabled if ReadOnlyOption is ReadOnlyLeaseBased.
+	ReadOnlyOption ReadOnlyOption
+
+	// Logger is the logger used for raft log. For multinode which can host
+	// multiple raft group, each raft group can have its own logger
+	Logger Logger
+
+	// DisableProposalForwarding set to true means that followers will drop
+	// proposals, rather than forwarding them to the leader. One use case for
+	// this feature would be in a situation where the Raft leader is used to
+	// compute the data of a proposal, for example, adding a timestamp from a
+	// hybrid logical clock to data in a monotonically increasing way. Forwarding
+	// should be disabled to prevent a follower with an innaccurate hybrid
+	// logical clock from assigning the timestamp and then forwarding the data
+	// to the leader.
+	DisableProposalForwarding bool
+}
+
+
+
+
+
+
+type raft struct {
+	id uint64
+
+	Term uint64
+	Vote uint64
+
+	readStates []ReadState
+
+	// the log
+	raftLog *raftLog
+
+	maxInflight int
+	maxMsgSize  uint64
+	prs         map[uint64]*Progress
+	learnerPrs  map[uint64]*Progress
+
+	state StateType
+
+	// isLearner is true if the local raft node is a learner.
+	isLearner bool
+
+	votes map[uint64]bool
+
+	msgs []pb.Message
+
+	// the leader id
+	lead uint64
+	// leadTransferee is id of the leader transfer target when its value is not zero.
+	// Follow the procedure defined in raft thesis 3.10.
+	leadTransferee uint64
+	// Only one conf change may be pending (in the log, but not yet
+	// applied) at a time. This is enforced via pendingConfIndex, which
+	// is set to a value >= the log index of the latest pending
+	// configuration change (if any). Config changes are only allowed to
+	// be proposed if the leader's applied index is greater than this
+	// value.
+	pendingConfIndex uint64
+
+	readOnly *readOnly
+
+	// number of ticks since it reached last electionTimeout when it is leader
+	// or candidate.
+	// number of ticks since it reached last electionTimeout or received a
+	// valid message from current leader when it is a follower.
+	electionElapsed int
+
+	// number of ticks since it reached last heartbeatTimeout.
+	// only leader keeps heartbeatElapsed.
+	heartbeatElapsed int
+
+	checkQuorum bool
+	preVote     bool
+
+	heartbeatTimeout int
+	electionTimeout  int
+	// randomizedElectionTimeout is a random number between
+	// [electiontimeout, 2 * electiontimeout - 1]. It gets reset
+	// when raft changes its state to follower or candidate.
+	randomizedElectionTimeout int
+	disableProposalForwarding bool
+
+	tick func()
+	step stepFunc
+
+	logger Logger
+}
+
+
+type HardState struct {
+	Term             uint64 `protobuf:"varint,1,opt,name=term" json:"term"`
+	Vote             uint64 `protobuf:"varint,2,opt,name=vote" json:"vote"`
+	Commit           uint64 `protobuf:"varint,3,opt,name=commit" json:"commit"`
+	XXX_unrecognized []byte `json:"-"`
+}
+
+func (m *Record) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	dAtA[i] = 0x8
+	i++
+	i = encodeVarintRecord(dAtA, i, uint64(m.Type))
+	dAtA[i] = 0x10
+	i++
+	i = encodeVarintRecord(dAtA, i, uint64(m.Crc))
+	if m.Data != nil {
+		dAtA[i] = 0x1a
+		i++
+		i = encodeVarintRecord(dAtA, i, uint64(len(m.Data)))
+		i += copy(dAtA[i:], m.Data)
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
+	return i, nil
+}
+
+
+
+
+//被序列化的数据的数据结构
+type Record struct {
+	Type             int64  `protobuf:"varint,1,opt,name=type" json:"type"`
+	Crc              uint32 `protobuf:"varint,2,opt,name=crc" json:"crc"`
+	Data             []byte `protobuf:"bytes,3,opt,name=data" json:"data,omitempty"`
+	XXX_unrecognized []byte `json:"-"`
+}
+
+
+
+
+
+func Read(snapname string) (*raftpb.Snapshot, error) {
+	b, err := ioutil.ReadFile(snapname)
+	if err != nil {
+		plog.Errorf("cannot read file %v: %v", snapname, err)
+		return nil, err
+	}
+
+	if len(b) == 0 {
+		plog.Errorf("unexpected empty snapshot")
+		return nil, ErrEmptySnapshot
+	}
+	
+	//反序列化文件中的数据成文snappb.Snapshot类型{crc,data[]}
+	var serializedSnap snappb.Snapshot
+	if err = serializedSnap.Unmarshal(b); err != nil {
+		plog.Errorf("corrupted snapshot file %v: %v", snapname, err)
+		return nil, err
+	}
+
+	if len(serializedSnap.Data) == 0 || serializedSnap.Crc == 0 {
+		plog.Errorf("unexpected empty snapshot")
+		return nil, ErrEmptySnapshot
+	}
+
+	crc := crc32.Update(0, crcTable, serializedSnap.Data)
+	if crc != serializedSnap.Crc {
+		plog.Errorf("corrupted snapshot file %v: crc mismatch", snapname)
+		return nil, ErrCRCMismatch
+	}
+	
+	//将上面反序列化的snappb.Snapshot中的data[]继续反序列化，成为raftpb.Snapshot类型
+	var snap raftpb.Snapshot
+	if err = snap.Unmarshal(serializedSnap.Data); err != nil {
+		plog.Errorf("corrupted snapshot file %v: %v", snapname, err)
+		return nil, err
+	}
+	return &snap, nil
+}
+
+
+
+raft.pb
+
+	type ConfState struct {
+		Nodes            []uint64 `protobuf:"varint,1,rep,name=nodes" json:"nodes,omitempty"`
+		Learners         []uint64 `protobuf:"varint,2,rep,name=learners" json:"learners,omitempty"`
+		XXX_unrecognized []byte   `json:"-"`
+	}
+
+	type SnapshotMetadata struct {
+		ConfState        ConfState `protobuf:"bytes,1,opt,name=conf_state,json=confState" json:"conf_state"`
+		Index            uint64    `protobuf:"varint,2,opt,name=index" json:"index"`
+		Term             uint64    `protobuf:"varint,3,opt,name=term" json:"term"`
+		XXX_unrecognized []byte    `json:"-"`
+	}
+
+
+	type Snapshot struct {
+		Data             []byte           `protobuf:"bytes,1,opt,name=data" json:"data,omitempty"`
+		Metadata         SnapshotMetadata `protobuf:"bytes,2,opt,name=metadata" json:"metadata"`
+		XXX_unrecognized []byte           `json:"-"`
+	}
+
+snappb.Snapshot
+	type Snapshot struct {
+		Crc              uint32 `protobuf:"varint,1,opt,name=crc" json:"crc"`
+		Data             []byte `protobuf:"bytes,2,opt,name=data" json:"data,omitempty"`
+		XXX_unrecognized []byte `json:"-"`
+	}
+
+
+
+
+创建一个node节点用来代表一个raft节点。
+node{
+	节点名；
+	节点id；
+	节点ip；
+	日志存储；
+	节点周期；
+	节点状态：跟随，候选，leader
+	
+	日志节点
+}
+
+系统启动：
+	1，初始化基本属性信息
+	2，初始化日志信息
+	4，启动监听线程
+	5，启动心跳线程
+	
+	
+	n，启动主逻辑线程
