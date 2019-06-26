@@ -61,12 +61,17 @@ public class AopTest {
 	}
 	
 	/**
+	 * 
+	 * 
+	 * 
+	 * 在那些被选择的方法上执行那些操作。
+	 * 在pointcut选择的方法上执行 before,after,after-returning,around,after-throwing操作
 		<aop:config>
 		    <aop:aspect ref="userServiceProxy">
 				标记出那些类的那些方法是需要执行代理方法
 				<aop:pointcut id="pointcut" expression="execution(* com.seeds.service.UserService.add(..))" />
 				
-		        在执行pointcut中指定的userService的某个方法前先执行beforeExe
+		                     在执行pointcut中指定的userService的某个方法前先执行beforeExe
 		        <aop:before method="beforeExe" pointcut-ref="pointcut" ></aop:before>
 				
 				在执行pointcut中指定的userService的某个方法前先执行afterExe
@@ -83,7 +88,35 @@ public class AopTest {
 		    </aop:aspect>
 		</aop:config>
 
-	 */
+		@Aspect
+		public class SimInterceptor {
+			@Pointcut("execution(* AopTest.method(..))")
+			public void printMethod() {
+			}
+			@Before("printMethod()")
+			public void printBeforeAdvice() {
+				System.out.println("printBeforeAdvice()!");
+			}
+			@AfterReturning(pointcut = "printMethod()",returning = "flag")
+			public void printAfterAdvice(String flag) {
+				System.out.println("printAfterAdvice()!" + flag);
+			}
+			@After("printMethod()")
+			public void finallyAdvice() {
+				System.out.println("fianllyAdvice()!");
+			}
+			@Around("printMethod() && args(name)")
+			public Object printAroundAdvice(ProceedingJoinPoint pjp,String name) throws Throwable {
+				Object result = null;
+				if (name.equals("whc")) {
+					pjp.proceed();
+				}else {
+					System.out.println("printMsg 方法以及被拦截。。。");
+				}
+				return result;
+			}
+		}
+*/
 	
 }
 
