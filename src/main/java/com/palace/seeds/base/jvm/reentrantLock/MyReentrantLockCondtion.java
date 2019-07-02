@@ -11,7 +11,7 @@ public class MyReentrantLockCondtion {
 	public static void mainRun(){
 		await();
 		await1();
-		await2();
+		//await2();
 		//condtionTimeOut();		
 		signal();
 		signal1();
