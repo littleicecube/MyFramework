@@ -13,6 +13,7 @@ import com.alibaba.dubbo.rpc.Exporter;
 import com.alibaba.dubbo.rpc.Invoker;
 import com.alibaba.dubbo.rpc.Protocol;
 import com.alibaba.dubbo.rpc.ProxyFactory;
+import com.alibaba.dubbo.rpc.protocol.dubbo.DubboInvoker;
 
 public class ExportDebug {
 	
@@ -40,14 +41,13 @@ public class ExportDebug {
 		registryURL = registryURL.addParameter("registry", "zookeeper");
 		
 		//创建一个URL用来描述一个需要对外提供服务的service和method
-		URL url = new URL("dubbo","127.0.0.1",8899,"com.palace.seeds.dubbox.debug.ExportDebug.IAccountService");
-		url.addParameterAndEncoded("methods", "add")
-		.addParameter("interface", "com.palace.seeds.dubbox.debug.ExportDebug.IAccountService")
+		URL url = new URL("dubbo","127.0.0.1",8899);
+		url.addParameter("interface", "com.palace.seeds.dubbox.debug.ExportDebug.IAccountService")
+		.addParameterAndEncoded("methods", "add")
 		.addParameter("registry", "zookeeper")
 		.addParameter("timeout", 1000)
 		.addParameter("scope", "remote")
 		.addParameter("retries", 2);
-		
 		
 	    //创建一个Protocol.class类型的ExtensionLoader
         ExtensionLoader loader = ExtensionLoader.getExtensionLoader(Protocol.class);
@@ -63,8 +63,10 @@ public class ExportDebug {
 		Class<IAccountService> interfaceClass = IAccountService.class;
 		//创建接口实现的类的实例,用来提供真正的服务
 		IAccountService ref = new AccountService();
+		//将要暴露的方法作为参数添加到注册中心的ULR上，在程序启动时根据URL中的配置将暴露的方法注册到注册中心
+		URL exporterUrl = registryURL.addParameterAndEncoded(Constants.EXPORT_KEY, url.toFullString());
 		//把要提供服务的类的接口以及其实通过代理类进行封装包装成一个Invoker
-        Invoker<?> invoker = proxyFactory.getInvoker(ref, (Class) interfaceClass, registryURL.addParameterAndEncoded(Constants.EXPORT_KEY, url.toFullString()));
+        Invoker<?> invoker = proxyFactory.getInvoker(ref,(Class)interfaceClass,exporterUrl);
         //获取Protocol.class的适配器实例
         Protocol protocol = (Protocol) loader.getAdaptiveExtension();
         //invoker中包含的协议类型是Dubbo的,故此处代码调用DubboProtocol中的export实现
@@ -108,7 +110,7 @@ public class ExportDebug {
 			String extName = url.getProtocol() == null ? "dubbo" : url.getProtocol() ;
 			if(extName == null) 
 				throw new IllegalStateException("Fail to get extension( Protocol) name from url(" + url.toString() + ") use keys([protocol])");
-			 Protocol extension = ( Protocol) ExtensionLoader.getExtensionLoader( Protocol.class).getExtension(extName);
+			 Protocol extension = ( Protocol) ExtensionLoader.getExtensionLoader(Protocol.class).getExtension(extName);
 			return extension.export(arg0);
 		}
 	}
@@ -125,7 +127,7 @@ public class ExportDebug {
 			if(extName == null){
 				throw new IllegalStateException("Fail to get extension");
 			}
-			ProxyFactory extension = (ProxyFactory)ExtensionLoader.getExtensionLoader( ProxyFactory.class).getExtension(extName);
+			ProxyFactory extension = (ProxyFactory)ExtensionLoader.getExtensionLoader(ProxyFactory.class).getExtension(extName);
 			return extension.getInvoker(arg0, arg1, arg2);
 		}
 		public  Object getProxy( Invoker arg0) {

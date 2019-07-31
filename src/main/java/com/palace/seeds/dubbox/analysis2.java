@@ -3,7 +3,7 @@ package com.palace.seeds.dubbox;
 import com.alibaba.dubbo.common.extension.ExtensionLoader;
 import com.alibaba.dubbo.rpc.Protocol;
 
-public class analysis {
+public class analysis2 {
 
 	
  /**
@@ -11,7 +11,7 @@ public class analysis {
   * 
   * 
 
-dubbo中有多种可选的通信协议，每一种通信协议的实现类都会将com.alibaba.dubbo.rpc.Protocol作为其父类
+dubbo中有多种可选的序列化协议，每一种序列化协议的实现类都会将com.alibaba.dubbo.rpc.Protocol作为其父类
 文件new File(dubbo-2.4.8/META-INF/dubbo/internal/com.alibaba.dubbo.rpc.Protocol)中的内容摘录如下:
 	filter=com.alibaba.dubbo.rpc.protocol.ProtocolFilterWrapper
 	listener=com.alibaba.dubbo.rpc.protocol.ProtocolListenerWrapper

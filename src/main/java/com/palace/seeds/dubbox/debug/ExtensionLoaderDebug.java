@@ -10,10 +10,10 @@ public class ExtensionLoaderDebug {
 
 	/**
 	 * 
-	ExtensionLoader的主要作用创建是某种类型信息配置的集合,创建时生成一个实例,根据传入的类型加载对应的配置信息,并对加载的类做一定的扩展操作
-	比如协议类型下存在几种不同类型协议的实现,比如支持DubboProtocol,ThriftProtocol两种类型的协议
+	一个接口可能有多种实现，程序在启动时需要把他们都加载到内存，根据运行时的信息决定使用指定的实现或者默认的实现，ExtensionLoader主要是作为某一种类型实现的集合,并对加载的类做
+	一定的扩展操作，比如存在几种不同类型的序列化协议的实现如：DubboProtocol,ThriftProtocol
 	那么程序在启动后就会创建一个实例来加载这两种配置.Protocol的全限定名(com.alibaba.dubbo.rpc.Protocol)
-	此段代码就会从路径new File(dubbo-2.4.8/META-INF/dubbo/internal/com.alibaba.dubbo.rpc.Protocol)加载配置文件中的信息到实例中
+	代码就会从路径new File(dubbo-2.4.8/META-INF/dubbo/internal/com.alibaba.dubbo.rpc.Protocol)加载配置文件中的信息到实例中
 	ExtensionLoader protocolLoader = ExtensionLoader.getExtensionLoader(Protocol.class);
 	
 	A)
