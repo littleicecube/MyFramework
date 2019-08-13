@@ -408,7 +408,7 @@ public class analysis {
         for (int d = 0; d <= maxOrder; ++ d) { // move down the tree one level at a time
             int depth = 1 << d;
             for (int p = 0; p < depth; ++ p) {
-                // in each level traverse left to right and set value to the depth of subtree
+            	//设置值为当前所在的层级,最小层级值为0,最大层级值为11
                 memoryMap[memoryMapIndex] = (byte) d;
                 depthMap[memoryMapIndex] = (byte) d;
                 memoryMapIndex ++;
@@ -436,7 +436,7 @@ public class analysis {
 10	2^10=1024		arr[1024]=10	arr[1025]=10	arr[1026]=10	arr[1027]=10
 11	2^11=2048		arr[2048]=11	arr[2049]=11	arr[2050]=11	arr[2051]=11
 
-0																		0
+0																		1
 																		|
 															  +---------------------+
 															  |						|
@@ -525,7 +525,7 @@ public class analysis {
         int id = 1;
         int initial = - (1 << d); // has last d bits = 0 and rest all = 1
         //value(id)表示根据数组的下标获取数组的值,数组的值表示当前所在的层级
-        //如果最最顶层的值小于11表示整棵树都被分配完,没有可用的节点了
+        //如果最最顶层的值大于11表示整棵树都被分配完,没有可用的节点了
         byte val = value(id);
         if (val > d) { // unusable
             return -1;
@@ -577,7 +577,7 @@ public class analysis {
     }
  * 
  * 5)创建一个PoolSubpage,用来表示被分配的叶子节点,以及内存的使用情况
- *     PoolSubpage(PoolSubpage<T> head, PoolChunk<T> chunk, int memoryMapIdx, int runOffset, int pageSize, int elemSize) {
+ * PoolSubpage(PoolSubpage<T> head, PoolChunk<T> chunk, int memoryMapIdx, int runOffset, int pageSize, int elemSize) {
         this.chunk = chunk;
         this.memoryMapIdx = memoryMapIdx;
         this.runOffset = runOffset;
@@ -603,7 +603,7 @@ public class analysis {
             //假设maxNumElems共16位,由于maxNumElems都是2的几次方关系,如果maxNumElems<64,那么低5位肯定不都为0,而高位由于&后都是0,那么(maxNumElems & 63) != 0成立
             //假设maxNumElems共16位,由于maxNumElems都是2的几次方关系,如果maxNumElems>=64,那么低5位肯定都为0,那么低5位&后是0,高位&后也是0,那么(maxNumElems & 63) != 0不成立
             //
-            //如果 elemSize >=128 ,那么pageSize / elemSize =8192/elemSize < 64,经过 bitmapLength = maxNumElems >>> 6 = maxNumElems/64后,bitmapLength = 0,然而
+            //如果 elemSize >=128 ,那么pageSize/elemSize=8192/elemSize < 64,经过 bitmapLength = maxNumElems >>> 6 = maxNumElems/64后,bitmapLength = 0,然而
             //这个时候bitmapLength的长度肯定不是0,而是最小长度1,故需要用来判断maxNumElems是否大于63来决定bitmapLength的长度
             if ((maxNumElems & 63) != 0) {
                 bitmapLength ++;
@@ -621,7 +621,6 @@ public class analysis {
         if (elemSize == 0) {
             return toHandle(0);
         }
-
         if (numAvail == 0 || !doNotDestroy) {
             return -1;
         }
@@ -689,9 +688,20 @@ public class analysis {
  * )返回分配的内存信息
  *     private long toHandle(int bitmapIdx) {
  *     //0x4000000000000000L=>(64位)0100000000000000000000000000000000000000000000000000000000000000
- *     //bitmapIdx << 32  bitmapIdx放在高32位,memoryMapIdx放在低32位
+ *     //bitmapIdx << 32  bitmapIdx放在高32位,bitmapIdx的最大值8*64=512
+ *     //memoryMapIdx放在低32位,memoryMapIdx的最大值4096
         return 0x4000000000000000L | (long) bitmapIdx << 32 | memoryMapIdx;
     }
+    
+    
+    log2ChunkSize = 24
+    假设id = 2014 => depth = 10 => 24-10=14 => 1<<14 = 2个page
+     private int runLength(int id) {
+        // represents the size in #bytes supported by node 'id' in the tree
+        return 1 << log2ChunkSize - depth(id);
+    }
+    
+    
  * 
  * 
  * 

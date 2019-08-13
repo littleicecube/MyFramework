@@ -31,14 +31,14 @@ public class SimpleServer2 {
 	
 	@Test
 	public void server() throws Exception  {
-		SelectorProvider selectorProvider = SelectorProvider.provider();
+		final SelectorProvider selectorProvider = SelectorProvider.provider();
 		//channel创建事件的selector
-		Selector selectorForChannelAccept = selectorProvider.openSelector();
+		final Selector selectorForChannelAccept = selectorProvider.openSelector();
 		//channel读事件,写事件的selector
-		Selector selectorForChannelReadWrite= selectorProvider.openSelector();
+		final Selector selectorForChannelReadWrite= selectorProvider.openSelector();
 		
 		//读写事件的处理逻辑
-		SimpleSocektChannel socektChannel = new SimpleSocektChannel() {
+		final SimpleSocektChannel socektChannel = new SimpleSocektChannel() {
 			@Override
 			public void doRead(SelectionKey sk) {
 				SocketChannel  ch =(SocketChannel) sk.channel();
@@ -58,7 +58,7 @@ public class SimpleServer2 {
 			}
 		};
 		//连接创建事件的处理逻辑
-		SimpleServerSocektChannel serverSocektChannel = new SimpleServerSocektChannel() {
+		final SimpleServerSocektChannel serverSocektChannel = new SimpleServerSocektChannel() {
 			@Override
 			public void doRead(SelectionKey sk)  {
 				try {

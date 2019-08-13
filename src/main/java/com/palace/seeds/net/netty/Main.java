@@ -9,10 +9,52 @@ import org.junit.Test;
 import com.palace.seeds.utils.MovPrint;
 
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.util.internal.SystemPropertyUtil;
 
 public class Main {
 	
-	
+	    private static   int DEFAULT_NUM_HEAP_ARENA;
+	    private static   int DEFAULT_NUM_DIRECT_ARENA;
+	    
+	    //
+	    static final int numTinySubpagePools = 512 >>> 4; //32 = 512/16
+	    // 32 * 512 = 16 * 1024
+	    int DEFAULT_TINY_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.tinyCacheSize", 512);
+        int DEFAULT_SMALL_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.smallCacheSize", 256);
+        int DEFAULT_NORMAL_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.normalCacheSize", 64);
+
+	    private static final int MIN_PAGE_SIZE = 4096;
+	    private static final int MAX_CHUNK_SIZE = (int) (((long) Integer.MAX_VALUE + 1) / 2);
+
+    @Test
+    public void init() {
+        final Runtime runtime = Runtime.getRuntime();
+        final int defaultMinNumArena = runtime.availableProcessors() * 2;
+        
+        final int defaultChunkSize = 8192;
+        long un = runtime.maxMemory() / defaultChunkSize / 2 / 3;
+        DEFAULT_NUM_HEAP_ARENA = Math.max(0,
+                SystemPropertyUtil.getInt(
+                        "io.netty.allocator.numHeapArenas",
+	                        (int) Math.min(
+	                                defaultMinNumArena,
+	                                runtime.maxMemory() / defaultChunkSize / 2 / 3)));
+        System.err.println(DEFAULT_NUM_HEAP_ARENA);
+ 
+	}
+    
+    @Test
+    public void dd() {
+    	int v1 = 1<<10;
+    	int v2 = 1<<8;
+    	int v3 = v1 ^ v2;
+    	System.err.println(v1+";"+v2+";"+v3+",b:"+Integer.toBinaryString(v3));
+    	System.err.println();
+    	System.err.println(32>>>4);
+    	System.err.println(16>>>4);
+    	System.err.println("513<<1:"+(513<<1));
+    }
+
 	@Test
 	public void allocator() {
 		ByteBuffer.allocate(12345);
@@ -55,7 +97,9 @@ public class Main {
 	@Test
 	public void poolChunkForTiny() {
 		PooledByteBufAllocator allocator = PooledByteBufAllocator.DEFAULT;
-		for(int i=0;i<257;i++) {
+		for(int i=1;i<=258;i++) {
+			String msg = "分配内存:"+i+",大小:"+i*32;
+			System.err.println(msg);
 			if(i == 256) {
 				allocator.ioBuffer(32);
 			}else if(i == 4){
@@ -261,5 +305,9 @@ public class Main {
 		System.out.println(Long.toBinaryString(val));
 		System.out.println(val/1024/1024);
 		System.out.println(2049/1024);
+		long bitmap = 0x3FFFFFFF;
+		System.out.println("0x3FFFFFFF二进制位："+Long.toBinaryString(bitmap));
+		System.out.println("0x3FFFFFFF二进制位长度："+Long.toBinaryString(bitmap).length());
+
 	}
 }

@@ -3,11 +3,27 @@ package com.palace.seeds.net.netty;
 public class analysisBack {
 
 	
-	
+
 	
 	
 /**
- * ==================
+ * 
+ * 主线程启动初始化工作,监听线程工作组,数据收发线程工作组
+ * ServerBootstrap中初始化结构
+ * 
+ * NioServerSocketChannel{
+ * 	SelectableChannel channel;
+ * 	ServerSocketChannelConfig config;
+ * 	DefaultChannelPipeline piple;
+ * 	Unsafe unsafe;
+ *  EventLoop eventLoop;
+ * }
+ * channel实例注册到eventLoop上,
+ * 
+ * 
+ * 
+ * 
+ * 
  * 
  * 
  * 

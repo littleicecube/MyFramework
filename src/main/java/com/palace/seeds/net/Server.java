@@ -27,7 +27,7 @@ public class Server {
 			write(socket.getOutputStream());
 		}
 	}
-	public void read(InputStream is) {
+	public void read(final InputStream is) {
 		new Thread(new Runnable() {
 			@Override
 			public void run() {
@@ -46,7 +46,7 @@ public class Server {
 		}).start();
 	}
 	
-	public void write(OutputStream os) {
+	public void write(final OutputStream os) {
 		new Thread(new Runnable() {
 			@Override
 			public void run() {
