@@ -13,6 +13,9 @@ import io.netty.channel.SimpleChannelInboundHandler;
 public class TelnetServerHandler extends SimpleChannelInboundHandler<String> {
 	@Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
+		if(true) {
+			return;
+		}
         // Send greeting for a new connection.
         ctx.write("Welcome to " + InetAddress.getLocalHost().getHostName() + "!\r\n");
         ctx.write("It is " + new Date() + " now.\r\n");

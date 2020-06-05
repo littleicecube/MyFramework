@@ -1,5 +1,7 @@
 package com.palace.seeds.net.netty;
 
+import java.nio.ByteBuffer;
+
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
@@ -52,6 +54,10 @@ public final class EchoServer {
             bossGroup.shutdownGracefully();
             workerGroup.shutdownGracefully();
         }
+    }
+    
+    public void something() {
+    	ByteBuffer.allocateDirect(100).duplicate();
     }
     
 }

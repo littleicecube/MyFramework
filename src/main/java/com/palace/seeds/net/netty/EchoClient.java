@@ -68,6 +68,10 @@ public final class EchoClient {
             
             Channel ch  = b.connect(HOST, PORT).sync().channel();
             ChannelFuture lastWriteFuture = null;
+            ch.write("hello wrold");
+            ch.flush();
+            ch.write("beijing\r\n");
+            ch.flush();
             BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
             for (;;) {
                 String line = in.readLine();
