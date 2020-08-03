@@ -2,6 +2,8 @@ package com.palace.seeds.base.jvm.reentrantLock.readWriteLock;
 
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import com.palace.seeds.utils.WThread;
+
 public class MainReadWriteLock {
 
 	ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -11,9 +13,6 @@ public class MainReadWriteLock {
 			public void run() {
 				lock.readLock().lock();
 				System.out.println("thread 1");
-				/*for(int i=0;i<65534;i++){
-					lock.readLock().lock();
-				}*/
 				lock.readLock().lock();
 				lock.readLock().unlock();
 				lock.readLock().unlock();
@@ -71,5 +70,6 @@ public class MainReadWriteLock {
 		m.lock3();
 		m.lock4();
 		m.lock5();
+		WThread.sleep(90000000l);
 	}
 }

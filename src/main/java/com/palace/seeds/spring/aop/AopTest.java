@@ -4,11 +4,12 @@ import java.lang.reflect.Method;
 
 import org.springframework.aop.Advisor;
 import org.springframework.aop.MethodBeforeAdvice;
+import org.springframework.aop.aspectj.AspectJAfterAdvice;
+import org.springframework.aop.aspectj.AspectJExpressionPointcut;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.aop.support.AbstractGenericPointcutAdvisor;
 import org.springframework.aop.support.DefaultPointcutAdvisor;
 import org.springframework.aop.support.NameMatchMethodPointcut;
-import org.springframework.aop.support.NameMatchMethodPointcutAdvisor;
 import org.springframework.aop.target.SingletonTargetSource;
 
 public class AopTest {
@@ -28,22 +29,42 @@ public class AopTest {
 		Object proxy = proxyFactory.getProxy(Thread.currentThread().getContextClassLoader());
 		
 		us = (UserServiceForAop)proxy;
-		us.update();
-		System.out.println("########################");
 		us.query();
+		System.out.println("########################");
+		us.update();
 		System.out.println("########################");
  	}
 
 	private static Advisor[] getAdvisor() {
 		NameMatchMethodPointcut pointcut = new NameMatchMethodPointcut();
-		pointcut.setMappedNames("update","query");
+		pointcut.setMappedNames("query");
 		DefaultPointcutAdvisor befAdvisor = new DefaultPointcutAdvisor();
+		befAdvisor.setPointcut(pointcut);
 		befAdvisor.setAdvice(new MethodBeforeAdvice() {
 			@Override
 			public void before(Method method, Object[] args, Object target) throws Throwable {
 				System.out.println("###before advice ,methodName:"+method.getName());
 			}
 		});
+		/**
+
+		 */
+//		mryt_spell_order tuew#8686
+//		mryt_spell_order aspp_order
+//		mryt_spell_tms	aspp_tms aspp_mall
+		
+		DefaultPointcutAdvisor afterAdvisor = new DefaultPointcutAdvisor();
+		try {
+			AspectJExpressionPointcut cut = new AspectJExpressionPointcut();
+			cut.setExpression("execution(* UserServiceForAop(..))");
+			cut.getMethodMatcher().matches(UserServiceForAop.class.getMethod("update"),UserServiceForAop.class);
+			AspectJAfterAdvice afterAdvice = new AspectJAfterAdvice(UserServiceForAop.class.getMethod("update"),cut,null);
+			afterAdvice.getAspectJAdviceMethod();
+			afterAdvisor.setAdvice(afterAdvice);
+		} catch (NoSuchMethodException | SecurityException e) {
+			e.printStackTrace();
+		}
+		
 		return new AbstractGenericPointcutAdvisor[] {befAdvisor};
 	}
 	

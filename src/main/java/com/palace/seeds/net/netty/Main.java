@@ -1,7 +1,10 @@
 package com.palace.seeds.net.netty;
 
 import java.math.BigDecimal;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Test;
@@ -25,6 +28,12 @@ public class Main {
 
 	    private static final int MIN_PAGE_SIZE = 4096;
 	    private static final int MAX_CHUNK_SIZE = (int) (((long) Integer.MAX_VALUE + 1) / 2);
+	    
+	@Test
+	public void reg() throws Exception {
+		 Selector.open().selectedKeys();
+		ServerSocketChannel.open().socket().bind(new InetSocketAddress(8848));
+	}
 
     @Test
     public void init() {

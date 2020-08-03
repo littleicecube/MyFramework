@@ -3,6 +3,8 @@ package com.palace.seeds.base.jvm.reentrantLock;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Random;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -36,15 +38,18 @@ public class ConditionLock {
 		}
 		return queue.remove();
 	}
-	
-
-	
 	 **/
 	
 	final ReentrantLock lock = new ReentrantLock();
 	final Condition condition = lock.newCondition();
 	final Queue<String> queue = new LinkedList<>();
 	
+	
+	@Test
+	public void blockingQueue() {
+		BlockingQueue queue = new LinkedBlockingQueue<String>();
+		
+	}
 	@Test
 	public void TestPC() {
 		new Thread(new Runnable() {
